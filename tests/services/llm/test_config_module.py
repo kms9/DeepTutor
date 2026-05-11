@@ -43,6 +43,7 @@ def test_get_llm_config_from_resolver(monkeypatch) -> None:
             api_version=None,
             extra_headers={"X-Test": "1"},
             reasoning_effort="medium",
+            context_window=128000,
         )
 
     monkeypatch.setattr(config_module, "resolve_llm_runtime_config", _fake_resolver)
@@ -55,6 +56,7 @@ def test_get_llm_config_from_resolver(monkeypatch) -> None:
     assert config.base_url == "https://openrouter.ai/api/v1"
     assert config.extra_headers == {"X-Test": "1"}
     assert config.reasoning_effort == "medium"
+    assert config.context_window == 128000
 
 
 def test_get_llm_config_falls_back_to_env(monkeypatch, tmp_path: Path) -> None:
@@ -85,6 +87,38 @@ def test_get_llm_config_falls_back_to_env(monkeypatch, tmp_path: Path) -> None:
     assert config.binding == "openai"
 
 
+def test_scoped_llm_config_takes_precedence_over_global_cache(monkeypatch, tmp_path: Path) -> None:
+    _reset_config_cache()
+    monkeypatch.setattr(
+        config_module,
+        "resolve_llm_runtime_config",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    _set_temp_env_store(
+        monkeypatch,
+        tmp_path,
+        "\n".join(
+            [
+                "LLM_MODEL=gpt-global",
+                "LLM_HOST=https://global.example/v1",
+                "LLM_API_KEY=sk-global",
+                "LLM_BINDING=openai",
+            ]
+        )
+        + "\n",
+    )
+    global_cfg = config_module.get_llm_config()
+    scoped_cfg = global_cfg.model_copy(update={"model": "gpt-scoped"})
+
+    token = config_module.set_scoped_llm_config(scoped_cfg)
+    try:
+        assert config_module.get_llm_config().model == "gpt-scoped"
+    finally:
+        config_module.reset_scoped_llm_config(token)
+
+    assert config_module.get_llm_config().model == "gpt-global"
+
+
 def test_initialize_environment_sets_openai_env(monkeypatch) -> None:
     """initialize_environment should set OPENAI env vars from resolver output."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -105,11 +139,39 @@ def test_initialize_environment_sets_openai_env(monkeypatch) -> None:
             api_version=None,
             extra_headers={},
             reasoning_effort=None,
+            context_window=None,
         ),
     )
     config_module.initialize_environment()
     assert os.environ["OPENAI_API_KEY"] == "test-key"
     assert os.environ["OPENAI_BASE_URL"] == "https://example.com/v1"
+
+
+def test_initialize_environment_skips_openai_env_for_custom_anthropic(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    monkeypatch.setattr(
+        config_module,
+        "resolve_llm_runtime_config",
+        lambda: ResolvedLLMConfig(
+            model="claude-sonnet-4-20250514",
+            provider_name="custom_anthropic",
+            provider_mode="direct",
+            binding_hint="custom_anthropic",
+            binding="custom_anthropic",
+            api_key="anthropic-key",
+            base_url="https://claude-proxy.example/v1",
+            effective_url="https://claude-proxy.example/v1",
+            api_version=None,
+            extra_headers={},
+            reasoning_effort=None,
+            context_window=None,
+        ),
+    )
+    config_module.initialize_environment()
+    assert "OPENAI_API_KEY" not in os.environ
+    assert "OPENAI_BASE_URL" not in os.environ
 
 
 def test_strip_value_handles_quotes() -> None:
@@ -134,6 +196,7 @@ def test_resolver_missing_model_raises(monkeypatch, tmp_path: Path) -> None:
             api_version=None,
             extra_headers={},
             reasoning_effort=None,
+            context_window=None,
         ),
     )
     _set_temp_env_store(

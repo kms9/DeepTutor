@@ -10,17 +10,19 @@ External interface (preserved for API compatibility):
 from __future__ import annotations
 
 import asyncio
-import os
-import traceback
 from datetime import datetime
+import logging
+import os
 from pathlib import Path
+import traceback
 from typing import Any
 
 import yaml
 
+from deeptutor.core.trace import derive_trace_metadata, new_call_id
+
 from ...services.config import parse_language
 from ...services.path_service import get_path_service
-from deeptutor.core.trace import derive_trace_metadata, new_call_id
 from .agents import PlannerAgent, SolverAgent, WriterAgent
 from .memory import Scratchpad, Source
 from .tool_runtime import SolveToolRuntime
@@ -68,7 +70,9 @@ class MainSolver:
         self.base_url: str | None = None
         self.api_version: str | None = None
         self.kb_name = kb_name or ""
-        self.logger: Any = None
+        self.logger: logging.Logger = logging.getLogger("deeptutor.Solver")
+        self.display_manager = None
+        self._task_log_handler: logging.Handler | None = None
         self.token_tracker: TokenTracker | None = None
         self._trace_callback: Any = None
         self._conversation_context: str = ""
@@ -88,7 +92,7 @@ class MainSolver:
         await self._load_config()
         self._init_logging()
         self._init_agents()
-        self.logger.success("Solver ready (Plan -> ReAct -> Write)")
+        self.logger.info("Solver ready (Plan -> ReAct -> Write)")
 
     def set_trace_callback(self, callback) -> None:
         """Register a callback that receives structured LLM trace events."""
@@ -127,7 +131,9 @@ class MainSolver:
             self.config = {
                 "system": {
                     "output_base_dir": paths_config.get("solve_output_dir", default_solve_dir),
-                    "save_intermediate_results": solve_config.get("save_intermediate_results", True),
+                    "save_intermediate_results": solve_config.get(
+                        "save_intermediate_results", True
+                    ),
                     "language": full_config.get("system", {}).get("language", "en"),
                 },
                 "logging": full_config.get("logging", {}),
@@ -139,9 +145,11 @@ class MainSolver:
             local_config: dict[str, Any] = {}
             if Path(config_path).exists():
                 try:
+
                     def _load(p: str) -> dict:
                         with open(p, encoding="utf-8") as f:
                             return yaml.safe_load(f) or {}
+
                     local_config = await asyncio.to_thread(_load, config_path)
                 except Exception:
                     pass
@@ -190,31 +198,47 @@ class MainSolver:
 
     def _init_logging(self) -> None:
         """Initialise logger, display manager, and token tracker."""
-        from deeptutor.logging import Logger
-
-        logging_config = self.config.get("logging", {})
-        log_dir = (
-            self.config.get("paths", {}).get("user_log_dir")
-            or logging_config.get("log_dir")
-        )
-
-        self.logger = Logger(
-            name="Solver",
-            level=logging_config.get("level", "INFO"),
-            log_dir=log_dir,
-            console_output=logging_config.get("console_output", True),
-            file_output=logging_config.get("save_to_file", True),
-        )
-        self.logger.display_manager = get_display_manager()
+        self.logger = logging.getLogger("deeptutor.Solver")
+        self.display_manager = get_display_manager()
 
         self.token_tracker = TokenTracker(prefer_tiktoken=True)
-        if self.logger.display_manager:
-            self.token_tracker.set_on_usage_added_callback(
-                self.logger.display_manager.update_token_stats
-            )
+        if self.display_manager:
+            self.token_tracker.set_on_usage_added_callback(self.display_manager.update_token_stats)
 
-        self.logger.section("Solver Initialising (Plan -> ReAct -> Write)")
+        self._log_section("Solver Initialising (Plan -> ReAct -> Write)")
         self.logger.info(f"Knowledge Base: {self.kb_name}")
+
+    def _log_section(self, title: str) -> None:
+        self.logger.info("=" * 60)
+        self.logger.info(title)
+        self.logger.info("=" * 60)
+
+    def _log_stage(self, stage_name: str, status: str = "start", detail: str | None = None) -> None:
+        suffix = f" | {detail}" if detail else ""
+        self.logger.info("%s %s%s", stage_name, status, suffix, extra={"stage": stage_name})
+
+    def _add_task_log_handler(self, task_log: str) -> None:
+        self._remove_task_log_handler()
+        path = Path(task_log)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(path, encoding="utf-8")
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s")
+        )
+        self.logger.addHandler(handler)
+        self._task_log_handler = handler
+
+    def _remove_task_log_handler(self) -> None:
+        if self._task_log_handler is None:
+            return
+        self.logger.removeHandler(self._task_log_handler)
+        self._task_log_handler.close()
+        self._task_log_handler = None
+
+    def _update_token_stats(self, summary: dict[str, Any]) -> None:
+        if self.display_manager and summary:
+            self.display_manager.update_token_stats(summary)
 
     def _init_agents(self) -> None:
         """Create the three agents."""
@@ -266,6 +290,7 @@ class MainSolver:
         self,
         question: str,
         image_url: str | None = None,
+        attachments: list[Any] | None = None,
         verbose: bool = True,
         detailed: bool | None = None,
         conversation_context: str = "",
@@ -275,6 +300,7 @@ class MainSolver:
         Args:
             question: The user question to solve.
             image_url: Optional image URL for multimodal questions.
+            attachments: Optional multimodal attachments from the chat composer.
             verbose: Enable verbose logging.
             detailed: If True, use iterative detailed writing. If None, read from config.
 
@@ -296,14 +322,19 @@ class MainSolver:
 
         # Task-level log file
         task_log = os.path.join(output_dir, "task.log")
-        self.logger.add_task_log_handler(task_log)
+        self._add_task_log_handler(task_log)
 
-        self.logger.section("Problem Solving Started")
+        self._log_section("Problem Solving Started")
         self.logger.info(f"Question: {question[:100]}{'...' if len(question) > 100 else ''}")
         self.logger.info(f"Output: {output_dir}")
 
         try:
-            result = await self._run_pipeline(question, output_dir, image_url=image_url)
+            result = await self._run_pipeline(
+                question,
+                output_dir,
+                image_url=image_url,
+                attachments=attachments,
+            )
             result["metadata"] = {
                 **result.get("metadata", {}),
                 "mode": "plan_react_write",
@@ -325,18 +356,15 @@ class MainSolver:
                     }
                     self.token_tracker.reset()
 
-            self.logger.success("Problem solving completed")
-            self.logger.remove_task_log_handlers()
+            self.logger.info("Problem solving completed")
+            self._remove_task_log_handler()
             return result
 
         except Exception as exc:
             self.logger.error(f"Solving failed: {exc}")
             self.logger.error(traceback.format_exc())
-            self.logger.remove_task_log_handlers()
+            self._remove_task_log_handler()
             raise
-        finally:
-            if hasattr(self, "logger"):
-                self.logger.shutdown()
 
     # ------------------------------------------------------------------
     # Pipeline
@@ -347,6 +375,7 @@ class MainSolver:
         question: str,
         output_dir: str,
         image_url: str | None = None,
+        attachments: list[Any] | None = None,
     ) -> dict[str, Any]:
         solve_cfg = self.config.get("solve", {})
         max_react = solve_cfg.get("max_react_iterations", 5)
@@ -357,9 +386,9 @@ class MainSolver:
         # ============================================================
         # Phase 1: PLAN
         # ============================================================
-        self.logger.stage("Phase 1", "start", "Planning")
-        if self.logger.display_manager:
-            self.logger.display_manager.set_agent_status("PlannerAgent", "running")
+        self._log_stage("Phase 1", "start", "Planning")
+        if self.display_manager:
+            self.display_manager.set_agent_status("PlannerAgent", "running")
         if hasattr(self, "_send_progress_update"):
             self._send_progress_update("plan", {"status": "planning"})
 
@@ -373,23 +402,24 @@ class MainSolver:
             kb_name=self.kb_name,
             memory_context=memory_ctx,
             image_url=image_url,
+            attachments=attachments,
         )
         scratchpad.set_plan(plan)
         scratchpad.save(output_dir)
 
-        if self.logger.display_manager:
-            self.logger.display_manager.set_agent_status("PlannerAgent", "done")
+        if self.display_manager:
+            self.display_manager.set_agent_status("PlannerAgent", "done")
         self.logger.info(f"Plan: {len(plan.steps)} steps — {plan.analysis[:80]}")
         for s in plan.steps:
             self.logger.info(f"  [{s.id}] {s.goal}")
-        self.logger.update_token_stats(self.token_tracker.get_summary())
+        self._update_token_stats(self.token_tracker.get_summary())
 
         # ============================================================
         # Phase 2: SOLVE (ReAct loop per step)
         # ============================================================
-        self.logger.stage("Phase 2", "start", "Solving")
-        if self.logger.display_manager:
-            self.logger.display_manager.set_agent_status("SolverAgent", "running")
+        self._log_stage("Phase 2", "start", "Solving")
+        if self.display_manager:
+            self.display_manager.set_agent_status("SolverAgent", "running")
         if hasattr(self, "_send_progress_update"):
             self._send_progress_update("solve", {"status": "starting"})
 
@@ -414,16 +444,23 @@ class MainSolver:
                 step_memory_context = await self._get_solver_memory_context(step.goal)
 
             # Compute step index for progress reporting
-            step_index = next(
-                (i + 1 for i, s in enumerate(scratchpad.plan.steps) if s.id == step.id),
-                0,
-            ) if scratchpad.plan else 0
+            step_index = (
+                next(
+                    (i + 1 for i, s in enumerate(scratchpad.plan.steps) if s.id == step.id),
+                    0,
+                )
+                if scratchpad.plan
+                else 0
+            )
             if hasattr(self, "_send_progress_update"):
-                self._send_progress_update("solve", {
-                    "step_id": step.id,
-                    "step_index": step_index,
-                    "step_target": step.goal,
-                })
+                self._send_progress_update(
+                    "solve",
+                    {
+                        "step_id": step.id,
+                        "step_index": step_index,
+                        "step_target": step.goal,
+                    },
+                )
 
             for round_num in range(max_react):
                 decision = await self.solver_agent.process(
@@ -479,7 +516,9 @@ class MainSolver:
                             }
                         )
                     replan_count += 1
-                    self.logger.info(f"    -> Replan requested ({replan_count}/{max_replans}): {action_input[:80]}")
+                    self.logger.info(
+                        f"    -> Replan requested ({replan_count}/{max_replans}): {action_input[:80]}"
+                    )
                     # Record the replan entry
                     scratchpad.add_entry(
                         step_id=step.id,
@@ -491,8 +530,8 @@ class MainSolver:
                         self_note=self_note,
                     )
                     if replan_count <= max_replans:
-                        if self.logger.display_manager:
-                            self.logger.display_manager.set_agent_status("PlannerAgent", "running")
+                        if self.display_manager:
+                            self.display_manager.set_agent_status("PlannerAgent", "running")
                         replan_memory = ""
                         if not self.disable_memory:
                             replan_memory = await self._get_planner_memory_context(question)
@@ -503,11 +542,12 @@ class MainSolver:
                             replan=True,
                             memory_context=replan_memory,
                             image_url=image_url,
+                            attachments=attachments,
                         )
                         scratchpad.update_plan(new_plan)
                         scratchpad.save(output_dir)
-                        if self.logger.display_manager:
-                            self.logger.display_manager.set_agent_status("PlannerAgent", "done")
+                        if self.display_manager:
+                            self.display_manager.set_agent_status("PlannerAgent", "done")
                         self.logger.info(f"    Plan revised: {len(new_plan.steps)} steps")
                     else:
                         self.logger.warning("    Max replans reached — marking step completed")
@@ -564,29 +604,29 @@ class MainSolver:
                     sources=sources,
                 )
                 scratchpad.save(output_dir)
-                self.logger.update_token_stats(self.token_tracker.get_summary())
+                self._update_token_stats(self.token_tracker.get_summary())
             else:
                 # Max rounds exhausted for this step
                 self.logger.warning(f"    Max ReAct iterations reached for {step.id}")
                 scratchpad.mark_step_status(step.id, "completed")
                 scratchpad.save(output_dir)
 
-        if self.logger.display_manager:
-            self.logger.display_manager.set_agent_status("SolverAgent", "done")
+        if self.display_manager:
+            self.display_manager.set_agent_status("SolverAgent", "done")
 
         completed = scratchpad.get_completed_steps()
         total = len(scratchpad.plan.steps) if scratchpad.plan else 0
         self.logger.info(f"  Solve phase done: {len(completed)}/{total} steps completed")
-        self.logger.update_token_stats(self.token_tracker.get_summary())
+        self._update_token_stats(self.token_tracker.get_summary())
 
         # ============================================================
         # Phase 3: WRITE
         # ============================================================
         detailed = getattr(self, "_detailed", False)
         write_mode = "detailed iterative" if detailed else "simple"
-        self.logger.stage("Phase 3", "start", f"Writing answer ({write_mode})")
-        if self.logger.display_manager:
-            self.logger.display_manager.set_agent_status("WriterAgent", "running")
+        self._log_stage("Phase 3", "start", f"Writing answer ({write_mode})")
+        if self.display_manager:
+            self.display_manager.set_agent_status("WriterAgent", "running")
         if hasattr(self, "_send_progress_update"):
             self._send_progress_update("write", {"status": "writing"})
 
@@ -614,15 +654,15 @@ class MainSolver:
                 on_content_chunk=content_cb,
             )
 
-        if self.logger.display_manager:
-            self.logger.display_manager.set_agent_status("WriterAgent", "done")
+        if self.display_manager:
+            self.display_manager.set_agent_status("WriterAgent", "done")
 
         # Save final answer
         answer_file = Path(output_dir) / "final_answer.md"
         with open(answer_file, "w", encoding="utf-8") as f:
             f.write(final_answer)
-        self.logger.success(f"Final answer saved: {answer_file}")
-        self.logger.update_token_stats(self.token_tracker.get_summary())
+        self.logger.info(f"Final answer saved: {answer_file}")
+        self._update_token_stats(self.token_tracker.get_summary())
 
         if not self.disable_memory:
             await self._publish_event(question, final_answer, scratchpad, output_dir)
@@ -695,7 +735,9 @@ class MainSolver:
                 await self._emit_trace_event(
                     {
                         "event": "tool_log",
-                        "message": f"Query: {action_input}" if action_input else "Starting retrieval",
+                        "message": f"Query: {action_input}"
+                        if action_input
+                        else "Starting retrieval",
                         **derive_trace_metadata(
                             retrieve_trace,
                             trace_kind="call_status",
@@ -727,7 +769,9 @@ class MainSolver:
                         ),
                     }
                 )
-            observation = self._format_tool_observation(action, result.content, result.metadata, obs_max)
+            observation = self._format_tool_observation(
+                action, result.content, result.metadata, obs_max
+            )
             sources = self._convert_tool_sources(result.sources, result.metadata)
         except Exception as exc:
             observation = f"Tool error ({action}): {exc}"
@@ -882,7 +926,9 @@ class MainSolver:
             from deeptutor.events.event_bus import Event, EventType, get_event_bus
 
             task_id = Path(output_dir).name
-            tools_used = list({e.action for e in scratchpad.entries if e.action not in ("done", "replan")})
+            tools_used = list(
+                {e.action for e in scratchpad.entries if e.action not in ("done", "replan")}
+            )
 
             event = Event(
                 type=EventType.SOLVE_COMPLETE,

@@ -8,6 +8,7 @@ Simplified version - loads from unified config service or falls back to .env.
 
 from __future__ import annotations
 
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, replace
 import logging
 import os
@@ -36,11 +37,13 @@ class LLMConfigUpdate(TypedDict, total=False):
     api_version: str | None
     extra_headers: dict[str, str]
     reasoning_effort: str | None
+    context_window: int | None
     max_tokens: int
     temperature: float
     max_concurrency: int
     requests_per_minute: int
     traffic_controller: "TrafficController" | None
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +52,10 @@ PROJECT_ROOT = get_env_store().path.parent
 
 def _is_openai_compatible_binding(binding: str | None) -> bool:
     canonical = canonical_provider_name(binding) or (binding or "").strip().lower()
-    if canonical in {"custom", "azure_openai"}:
-        return True
     spec = find_by_name(canonical)
-    return bool(spec and not spec.is_oauth)
+    if not spec or spec.is_oauth:
+        return False
+    return spec.backend in {"openai_compat", "azure_openai"}
 
 
 def _set_openai_env_vars(api_key: str | None, base_url: str | None, *, source: str) -> None:
@@ -103,6 +106,7 @@ class LLMConfig:
     api_version: str | None = None
     extra_headers: dict[str, str] | None = None
     reasoning_effort: str | None = None
+    context_window: int | None = None
     max_tokens: int = 4096
     temperature: float = 0.7
     max_concurrency: int = 20
@@ -123,6 +127,20 @@ class LLMConfig:
 
 
 _LLM_CONFIG_CACHE: LLMConfig | None = None
+_SCOPED_LLM_CONFIG: ContextVar[LLMConfig | None] = ContextVar(
+    "deeptutor_scoped_llm_config",
+    default=None,
+)
+
+
+def set_scoped_llm_config(config: LLMConfig | None) -> Token[LLMConfig | None]:
+    """Set the LLM config for the current async context."""
+    return _SCOPED_LLM_CONFIG.set(config)
+
+
+def reset_scoped_llm_config(token: Token[LLMConfig | None]) -> None:
+    """Reset a scoped LLM config token returned by ``set_scoped_llm_config``."""
+    _SCOPED_LLM_CONFIG.reset(token)
 
 
 def initialize_environment() -> None:
@@ -162,6 +180,7 @@ def _get_llm_config_from_env() -> LLMConfig:
     api_key = _strip_value(env_store.get("LLM_API_KEY"))
     base_url = _strip_value(env_store.get("LLM_HOST"))
     api_version = _strip_value(env_store.get("LLM_API_VERSION"))
+    reasoning_effort = _strip_value(env_store.get("LLM_REASONING_EFFORT"))
 
     # Validate required configuration
     if not model:
@@ -179,6 +198,7 @@ def _get_llm_config_from_env() -> LLMConfig:
         api_key=api_key or "",
         base_url=base_url,
         api_version=api_version,
+        reasoning_effort=reasoning_effort or None,
     )
 
 
@@ -204,6 +224,7 @@ def _get_llm_config_from_resolver() -> LLMConfig:
         api_version=resolved.api_version,
         extra_headers=resolved.extra_headers,
         reasoning_effort=resolved.reasoning_effort,
+        context_window=resolved.context_window,
     )
 
 
@@ -219,6 +240,10 @@ def get_llm_config() -> LLMConfig:
     """
     global _LLM_CONFIG_CACHE
 
+    scoped = _SCOPED_LLM_CONFIG.get()
+    if scoped is not None:
+        return scoped
+
     if _LLM_CONFIG_CACHE is not None:
         return _LLM_CONFIG_CACHE
 
@@ -230,6 +255,12 @@ def get_llm_config() -> LLMConfig:
             exc,
         )
         _LLM_CONFIG_CACHE = _get_llm_config_from_env()
+
+    # Allow LLM_REASONING_EFFORT from .env to override the resolver path
+    env_reasoning = _strip_value(get_env_store().get("LLM_REASONING_EFFORT"))
+    if env_reasoning:
+        _LLM_CONFIG_CACHE = _LLM_CONFIG_CACHE.model_copy(update={"reasoning_effort": env_reasoning})
+
     return _LLM_CONFIG_CACHE
 
 

@@ -20,8 +20,8 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-import json
 from contextlib import asynccontextmanager
+import json
 from typing import Any, AsyncIterator
 
 from .stream import StreamEvent, StreamEventType
@@ -51,6 +51,8 @@ class StreamBus:
         try:
             for event in self._history:
                 yield event
+            if self._closed and q.empty():
+                return
             while True:
                 event = await q.get()
                 if event is None:

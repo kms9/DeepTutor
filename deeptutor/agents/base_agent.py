@@ -5,23 +5,27 @@ Unified BaseAgent - Base class for all module agents.
 This is the single source of truth for agent base functionality across:
 - solve module
 - research module
-- guide module
 - co_writer module
 - question module (unified in Jan 2026 refactor)
 """
 
 from abc import ABC, abstractmethod
+import inspect
+import logging
 import os
 import time
-import inspect
 from typing import Any, AsyncGenerator, Awaitable, Callable
 
 from deeptutor.config.settings import settings
-from deeptutor.logging import LLMStats, get_logger
+from deeptutor.logging import LLMStats
 from deeptutor.services.config import get_agent_params
 from deeptutor.services.llm import complete as llm_complete
-from deeptutor.services.llm import get_llm_config, get_token_limit_kwargs, supports_response_format
-from deeptutor.services.llm import prepare_multimodal_messages, supports_vision
+from deeptutor.services.llm import (
+    get_llm_config,
+    get_token_limit_kwargs,
+    prepare_multimodal_messages,
+    supports_response_format,
+)
 from deeptutor.services.llm import stream as llm_stream
 from deeptutor.services.prompt import get_prompt_manager
 
@@ -63,7 +67,7 @@ class BaseAgent(ABC):
         Initialize base Agent.
 
         Args:
-            module_name: Module name (solve/research/guide/co_writer/question)
+            module_name: Module name (solve/research/co_writer/question)
             agent_name: Agent name (e.g., "solve_agent", "note_agent")
             api_key: API key (optional, defaults to environment variable)
             base_url: API endpoint (optional, defaults to environment variable)
@@ -127,7 +131,7 @@ class BaseAgent(ABC):
 
         # Initialize logger
         logger_name = f"{module_name.capitalize()}.{agent_name}"
-        self.logger = get_logger(logger_name, log_dir=log_dir)
+        self.logger = logging.getLogger(f"deeptutor.{logger_name}")
 
         # Load prompts using unified PromptManager
         try:
@@ -413,12 +417,25 @@ class BaseAgent(ABC):
             else:
                 self.logger.debug(f"response_format not supported for {binding}/{model}, skipping")
 
-        if messages:
-            if attachments:
-                mm_result = prepare_multimodal_messages(
-                    messages, attachments, binding=self.binding, model=model
+        # Keep non-streaming calls aligned with stream_llm/chat: when images
+        # are attached, convert the final user message to multimodal content.
+        if attachments:
+            if not messages:
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+            mm_result = prepare_multimodal_messages(
+                messages, attachments, binding=self.binding, model=model
+            )
+            messages = mm_result.messages
+            if mm_result.images_stripped:
+                self.logger.info(
+                    "Images stripped for %s/%s – model does not support vision",
+                    self.binding,
+                    model,
                 )
-                messages = mm_result.messages
+        if messages:
             kwargs["messages"] = messages
 
         # Log input
@@ -435,14 +452,14 @@ class BaseAgent(ABC):
             **(trace_meta or {}),
         }
         await self._emit_trace_event(trace_payload_base)
-        if hasattr(self.logger, "log_llm_input"):
-            self.logger.log_llm_input(
-                agent_name=self.agent_name,
-                stage=stage_label,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                metadata={"model": model, "temperature": temperature, "max_tokens": max_tokens},
-            )
+        self.logger.debug(
+            "LLM input %s:%s model=%s system_chars=%d user_chars=%d",
+            self.agent_name,
+            stage_label,
+            model,
+            len(system_prompt),
+            len(user_prompt),
+        )
 
         # Call LLM via factory (routes to cloud or local provider)
         response = None
@@ -490,13 +507,13 @@ class BaseAgent(ABC):
                 "duration": call_duration,
             }
         )
-        if hasattr(self.logger, "log_llm_output"):
-            self.logger.log_llm_output(
-                agent_name=self.agent_name,
-                stage=stage_label,
-                response=response,
-                metadata={"length": len(response), "duration": call_duration},
-            )
+        self.logger.debug(
+            "LLM output %s:%s chars=%d duration=%.2fs",
+            self.agent_name,
+            stage_label,
+            len(response),
+            call_duration,
+        )
 
         # Verbose output
         if verbose:
@@ -540,6 +557,7 @@ class BaseAgent(ABC):
         model = model or self.get_model()
         temperature = temperature if temperature is not None else self.get_temperature()
         max_tokens = max_tokens if max_tokens is not None else self.get_max_tokens()
+        max_retries = self.get_max_retries()
 
         # Build kwargs
         kwargs = {
@@ -564,11 +582,22 @@ class BaseAgent(ABC):
                 self.logger.debug(f"response_format not supported for {binding}/{model}, skipping")
 
         # Inject image attachments into messages when provided
-        if messages and attachments:
+        if attachments:
+            if not messages:
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
             mm_result = prepare_multimodal_messages(
                 messages, attachments, binding=self.binding, model=model
             )
             messages = mm_result.messages
+            if mm_result.images_stripped:
+                self.logger.info(
+                    "Images stripped for %s/%s – model does not support vision",
+                    self.binding,
+                    model,
+                )
 
         # Log input
         stage_label = stage or self.agent_name
@@ -584,14 +613,14 @@ class BaseAgent(ABC):
             **(trace_meta or {}),
         }
         await self._emit_trace_event(trace_payload_base)
-        if hasattr(self.logger, "log_llm_input"):
-            self.logger.log_llm_input(
-                agent_name=self.agent_name,
-                stage=stage_label,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                metadata={"model": model, "temperature": temperature, "streaming": True},
-            )
+        self.logger.debug(
+            "LLM stream input %s:%s model=%s system_chars=%d user_chars=%d",
+            self.agent_name,
+            stage_label,
+            model,
+            len(system_prompt),
+            len(user_prompt),
+        )
 
         # Track start time
         start_time = time.time()
@@ -608,6 +637,7 @@ class BaseAgent(ABC):
                 api_version=self.api_version,
                 binding=self.binding,
                 messages=messages,
+                max_retries=max_retries,
                 **kwargs,
             ):
                 full_response += chunk
@@ -639,19 +669,13 @@ class BaseAgent(ABC):
                     "duration": call_duration,
                 }
             )
-            if hasattr(self.logger, "log_llm_output"):
-                self.logger.log_llm_output(
-                    agent_name=self.agent_name,
-                    stage=stage_label,
-                    response=full_response[:200] + "..."
-                    if len(full_response) > 200
-                    else full_response,
-                    metadata={
-                        "length": len(full_response),
-                        "duration": call_duration,
-                        "streaming": True,
-                    },
-                )
+            self.logger.debug(
+                "LLM stream output %s:%s chars=%d duration=%.2fs",
+                self.agent_name,
+                stage_label,
+                len(full_response),
+                call_duration,
+            )
 
         except Exception as e:
             await self._emit_trace_event(

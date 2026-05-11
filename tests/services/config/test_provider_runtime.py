@@ -77,6 +77,7 @@ def _empty_env(tmp_path: Path) -> EnvStore:
                 "JINA_API_KEY=",
                 "SEARXNG_BASE_URL=",
                 "PERPLEXITY_API_KEY=",
+                "SERPER_API_KEY=",
             ]
         )
         + "\n",
@@ -163,6 +164,190 @@ def test_llm_local_fallback(tmp_path: Path) -> None:
     assert resolved.api_key == "sk-no-key-required"
 
 
+def test_llm_minimax_binding_uses_minimaxi_endpoint(tmp_path: Path) -> None:
+    catalog = _build_catalog(
+        llm_profile={
+            "id": "llm-p",
+            "name": "LLM",
+            "binding": "minimax",
+            "base_url": "",
+            "api_key": "minimax-key",
+            "api_version": "",
+            "extra_headers": {},
+            "models": [{"id": "llm-m", "name": "m", "model": "MiniMax-M2.7"}],
+        }
+    )
+    resolved = resolve_llm_runtime_config(catalog=catalog, env_store=_empty_env(tmp_path))
+    assert resolved.provider_name == "minimax"
+    assert resolved.provider_mode == "standard"
+    assert resolved.effective_url == "https://api.minimaxi.com/v1"
+
+
+def test_llm_minimax_anthropic_binding_uses_anthropic_endpoint(tmp_path: Path) -> None:
+    catalog = _build_catalog(
+        llm_profile={
+            "id": "llm-p",
+            "name": "LLM",
+            "binding": "minimax_anthropic",
+            "base_url": "",
+            "api_key": "minimax-key",
+            "api_version": "",
+            "extra_headers": {},
+            "models": [{"id": "llm-m", "name": "c", "model": "claude-sonnet-4-20250514"}],
+        }
+    )
+    resolved = resolve_llm_runtime_config(catalog=catalog, env_store=_empty_env(tmp_path))
+    assert resolved.provider_name == "minimax_anthropic"
+    assert resolved.provider_mode == "standard"
+    assert resolved.effective_url == "https://api.minimaxi.com/anthropic"
+
+
+def test_llm_custom_anthropic_binding_stays_direct(tmp_path: Path) -> None:
+    catalog = _build_catalog(
+        llm_profile={
+            "id": "llm-p",
+            "name": "LLM",
+            "binding": "custom_anthropic",
+            "base_url": "https://claude-proxy.example/v1/messages",
+            "api_key": "anthropic-key",
+            "api_version": "",
+            "extra_headers": {"x-tenant": "lab"},
+            "models": [{"id": "llm-m", "name": "c", "model": "claude-sonnet-4-20250514"}],
+        }
+    )
+    resolved = resolve_llm_runtime_config(catalog=catalog, env_store=_empty_env(tmp_path))
+    assert resolved.provider_name == "custom_anthropic"
+    assert resolved.provider_mode == "direct"
+    assert resolved.binding == "custom_anthropic"
+    assert resolved.effective_url == "https://claude-proxy.example/v1/messages"
+    assert resolved.extra_headers == {"x-tenant": "lab"}
+
+
+def test_llm_lm_studio_alias_resolves_to_local_provider(tmp_path: Path) -> None:
+    catalog = _build_catalog(
+        llm_profile={
+            "id": "llm-p",
+            "name": "LLM",
+            "binding": "lm-studio",
+            "base_url": "",
+            "api_key": "",
+            "api_version": "",
+            "extra_headers": {},
+            "models": [{"id": "llm-m", "name": "m", "model": "llama-3.2"}],
+        }
+    )
+    resolved = resolve_llm_runtime_config(catalog=catalog, env_store=_empty_env(tmp_path))
+    assert resolved.provider_name == "lm_studio"
+    assert resolved.provider_mode == "local"
+    assert resolved.effective_url == "http://localhost:1234/v1"
+    assert resolved.api_key == "sk-no-key-required"
+
+
+def test_llm_context_window_passes_through_from_catalog(tmp_path: Path) -> None:
+    catalog = _build_catalog(
+        llm_profile={
+            "id": "llm-p",
+            "name": "LLM",
+            "binding": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-test",
+            "api_version": "",
+            "extra_headers": {},
+            "models": [
+                {
+                    "id": "llm-m",
+                    "name": "GPT 4o mini",
+                    "model": "gpt-4o-mini",
+                    "context_window": 128000,
+                }
+            ],
+        }
+    )
+    resolved = resolve_llm_runtime_config(catalog=catalog, env_store=_empty_env(tmp_path))
+    assert resolved.context_window == 128000
+
+
+def test_llm_selection_overrides_active_model_without_mutating_catalog(tmp_path: Path) -> None:
+    profile_a = {
+        "id": "p-a",
+        "name": "OpenRouter",
+        "binding": "openrouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "sk-or-test",
+        "api_version": "",
+        "extra_headers": {},
+        "models": [
+            {
+                "id": "m-a",
+                "name": "Gemini",
+                "model": "google/gemini-3-flash-preview",
+            }
+        ],
+    }
+    profile_b = {
+        "id": "p-b",
+        "name": "Local",
+        "binding": "ollama",
+        "base_url": "http://localhost:11434/v1",
+        "api_key": "",
+        "api_version": "",
+        "extra_headers": {},
+        "models": [{"id": "m-b", "name": "Llama", "model": "llama3.2"}],
+    }
+    catalog = _build_catalog(llm_profile=profile_a, llm_model=profile_a["models"][0])
+    catalog["services"]["llm"]["profiles"].append(profile_b)
+
+    resolved = resolve_llm_runtime_config(
+        catalog=catalog,
+        env_store=_empty_env(tmp_path),
+        llm_selection={"profile_id": "p-b", "model_id": "m-b"},
+    )
+
+    assert resolved.model == "llama3.2"
+    assert resolved.provider_name == "ollama"
+    assert resolved.provider_mode == "local"
+    assert catalog["services"]["llm"]["active_profile_id"] == "p-a"
+    assert catalog["services"]["llm"]["active_model_id"] == "m-a"
+
+
+def test_llm_reasoning_effort_env_overrides_catalog(tmp_path: Path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "LLM_BINDING=openai",
+                "LLM_MODEL=gpt-4o-mini",
+                "LLM_API_KEY=sk-test",
+                "LLM_HOST=https://api.openai.com/v1",
+                "LLM_REASONING_EFFORT=minimal",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    catalog = _build_catalog(
+        llm_profile={
+            "id": "llm-p",
+            "name": "LLM",
+            "binding": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-test",
+            "api_version": "",
+            "extra_headers": {},
+            "models": [
+                {
+                    "id": "llm-m",
+                    "name": "GPT 4o mini",
+                    "model": "gpt-4o-mini",
+                    "reasoning_effort": "high",
+                }
+            ],
+        }
+    )
+    resolved = resolve_llm_runtime_config(catalog=catalog, env_store=EnvStore(path=env_path))
+    assert resolved.reasoning_effort == "minimal"
+
+
 def test_search_fallback_to_duckduckgo_without_key(tmp_path: Path) -> None:
     catalog = _build_catalog(
         search_profile={
@@ -214,6 +399,25 @@ def test_search_perplexity_missing_credentials(tmp_path: Path) -> None:
     )
     resolved = resolve_search_runtime_config(catalog=catalog, env_store=_empty_env(tmp_path))
     assert resolved.provider == "perplexity"
+    assert resolved.unsupported_provider is False
+    assert resolved.deprecated_provider is False
+    assert resolved.missing_credentials is True
+
+
+def test_search_serper_missing_credentials(tmp_path: Path) -> None:
+    catalog = _build_catalog(
+        search_profile={
+            "id": "search-p",
+            "name": "Search",
+            "provider": "serper",
+            "base_url": "",
+            "api_key": "",
+            "proxy": "",
+            "models": [],
+        }
+    )
+    resolved = resolve_search_runtime_config(catalog=catalog, env_store=_empty_env(tmp_path))
+    assert resolved.provider == "serper"
     assert resolved.unsupported_provider is False
     assert resolved.deprecated_provider is False
     assert resolved.missing_credentials is True

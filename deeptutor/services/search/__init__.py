@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
-from deeptutor.logging import get_logger
 from deeptutor.services.config import (
     DEPRECATED_SEARCH_PROVIDERS,
     PROJECT_ROOT,
@@ -29,7 +29,7 @@ from .providers import (
 )
 from .types import Citation, SearchResult, WebSearchResponse
 
-_logger = get_logger("Search", level="INFO")
+_logger = logging.getLogger(__name__)
 
 _PROVIDER_KEY_ENV = {
     "brave": "BRAVE_API_KEY",
@@ -72,11 +72,13 @@ def _assert_provider_supported(provider_name: str) -> None:
     if provider_name in _DEPRECATED_UNSUPPORTED:
         raise ValueError(
             f"Search provider `{provider_name}` is deprecated/unsupported. "
-            "Please switch to brave, tavily, jina, searxng, duckduckgo, or perplexity."
+            "Please switch to brave, tavily, jina, searxng, duckduckgo, perplexity, or serper."
         )
     if provider_name not in SUPPORTED_SEARCH_PROVIDERS:
         allowed = ", ".join(sorted(SUPPORTED_SEARCH_PROVIDERS))
-        raise ValueError(f"Unknown search provider `{provider_name}`. Supported providers: {allowed}")
+        raise ValueError(
+            f"Unknown search provider `{provider_name}`. Supported providers: {allowed}"
+        )
 
 
 def web_search(
@@ -117,10 +119,11 @@ def web_search(
             provider_name = "duckduckgo"
         else:
             provider_kwargs.setdefault("api_key", api_key)
-    elif provider_name == "perplexity":
+    elif provider_name in {"perplexity", "serper"}:
         api_key = _resolve_provider_key(provider_name, resolved.api_key)
         if not api_key:
-            raise ValueError("perplexity requires api_key (profile.api_key or PERPLEXITY_API_KEY).")
+            env_hint = "PERPLEXITY_API_KEY" if provider_name == "perplexity" else "SERPER_API_KEY"
+            raise ValueError(f"{provider_name} requires api_key (profile.api_key or {env_hint}).")
         provider_kwargs.setdefault("api_key", api_key)
     elif provider_name == "searxng":
         base_url = provider_kwargs.get("base_url") or resolved.base_url
@@ -135,7 +138,7 @@ def web_search(
         provider_kwargs["proxy"] = resolved.proxy
 
     search_provider = get_provider(provider_name, **provider_kwargs)
-    _logger.progress(f"[{search_provider.name}] Searching: {query[:50]}...")
+    _logger.info(f"[{search_provider.name}] Searching: {query[:50]}...")
     try:
         response = search_provider.search(query, **provider_kwargs)
     except Exception as exc:

@@ -9,9 +9,8 @@ Note: This is a legacy interface. Prefer using the factory functions directly:
 """
 
 from collections.abc import Awaitable, Callable
+import logging
 from typing import cast
-
-from deeptutor.logging import get_logger
 
 from .config import LLMConfig, get_llm_config
 from .utils import sanitize_url
@@ -34,7 +33,7 @@ class LLMClient:
         """
 
         self.config = config or get_llm_config()
-        self.logger = get_logger("LLMClient")
+        self.logger = logging.getLogger(__name__)
 
         # Keep OPENAI_* env vars aligned for libraries that still read from env.
         self._setup_openai_env_vars()
@@ -55,6 +54,7 @@ class LLMClient:
 
             if self.config.base_url:
                 from .utils import sanitize_url as _sanitize
+
                 clean_url = _sanitize(self.config.base_url)
                 os.environ["OPENAI_BASE_URL"] = clean_url
                 self.logger.debug(f"Set OPENAI_BASE_URL env var to {clean_url}")

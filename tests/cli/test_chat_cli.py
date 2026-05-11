@@ -44,11 +44,16 @@ def test_run_command_json_mode(monkeypatch) -> None:
                 "run",
                 cap,
                 "hello world",
-                "--format", "json",
-                "--tool", "rag",
-                "--kb", "demo-kb",
-                "--history-ref", "session-old",
-                "--notebook-ref", "nb1:rec1,rec2",
+                "--format",
+                "json",
+                "--tool",
+                "rag",
+                "--kb",
+                "demo-kb",
+                "--history-ref",
+                "session-old",
+                "--notebook-ref",
+                "nb1:rec1,rec2",
             ],
         )
 
@@ -61,7 +66,9 @@ def test_run_command_json_mode(monkeypatch) -> None:
     assert captured_requests[0].tools == ["rag"]
     assert captured_requests[0].knowledge_bases == ["demo-kb"]
     assert captured_requests[0].history_references == ["session-old"]
-    assert captured_requests[0].notebook_references == [{"notebook_id": "nb1", "record_ids": ["rec1", "rec2"]}]
+    assert captured_requests[0].notebook_references == [
+        {"notebook_id": "nb1", "record_ids": ["rec1", "rec2"]}
+    ]
     assert captured_requests[-1].capability == "deep_research"
 
 
@@ -120,3 +127,20 @@ def test_session_list_command_uses_shared_store(monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "session-1" in result.output
     assert "Algebra" in result.output
+
+
+def test_start_command_propagates_start_web_exit_code(monkeypatch) -> None:
+    class Result:
+        returncode = 7
+
+    def _fake_run(cmd, check=False):  # noqa: ANN001
+        assert check is False
+        assert cmd[0]
+        assert cmd[1].endswith("scripts/start_web.py")
+        return Result()
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+
+    result = runner.invoke(app, ["start"])
+
+    assert result.exit_code == 7

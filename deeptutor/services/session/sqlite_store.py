@@ -5,14 +5,14 @@ SQLite-backed unified chat session store.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import json
 import os
+from pathlib import Path
 import sqlite3
 import time
-import uuid
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
+import uuid
 
 from deeptutor.services.path_service import get_path_service
 
@@ -103,6 +103,7 @@ class SQLiteSessionStore:
                     capability TEXT DEFAULT '',
                     events_json TEXT DEFAULT '',
                     attachments_json TEXT DEFAULT '',
+                    metadata_json TEXT DEFAULT '{}',
                     created_at REAL NOT NULL
                 );
 
@@ -186,9 +187,12 @@ class SQLiteSessionStore:
             )
             columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
             if "preferences_json" not in columns:
-                conn.execute(
-                    "ALTER TABLE sessions ADD COLUMN preferences_json TEXT DEFAULT '{}'"
-                )
+                conn.execute("ALTER TABLE sessions ADD COLUMN preferences_json TEXT DEFAULT '{}'")
+            message_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()
+            }
+            if "metadata_json" not in message_columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN metadata_json TEXT DEFAULT '{}'")
             conn.commit()
 
     async def _run(self, fn, *args):
@@ -201,7 +205,9 @@ class SQLiteSessionStore:
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
-    def _create_session_sync(self, title: str | None = None, session_id: str | None = None) -> dict[str, Any]:
+    def _create_session_sync(
+        self, title: str | None = None, session_id: str | None = None
+    ) -> dict[str, Any]:
         now = time.time()
         resolved_id = session_id or f"unified_{int(now * 1000)}_{uuid.uuid4().hex[:8]}"
         resolved_title = (title or "New conversation").strip() or "New conversation"
@@ -224,7 +230,9 @@ class SQLiteSessionStore:
             "summary_up_to_msg_id": 0,
         }
 
-    async def create_session(self, title: str | None = None, session_id: str | None = None) -> dict[str, Any]:
+    async def create_session(
+        self, title: str | None = None, session_id: str | None = None
+    ) -> dict[str, Any]:
         return await self._run(self._create_session_sync, title, session_id)
 
     def _get_session_sync(self, session_id: str) -> dict[str, Any] | None:
@@ -428,7 +436,9 @@ class SQLiteSessionStore:
     def _append_turn_event_sync(self, turn_id: str, event: dict[str, Any]) -> dict[str, Any]:
         now = time.time()
         with self._connect() as conn:
-            turn = conn.execute("SELECT id, session_id FROM turns WHERE id = ?", (turn_id,)).fetchone()
+            turn = conn.execute(
+                "SELECT id, session_id FROM turns WHERE id = ?", (turn_id,)
+            ).fetchone()
             if turn is None:
                 raise ValueError(f"Turn not found: {turn_id}")
             provided_seq = int(event.get("seq") or 0)
@@ -536,18 +546,22 @@ class SQLiteSessionStore:
         capability: str = "",
         events: list[dict[str, Any]] | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> int:
         now = time.time()
         with self._connect() as conn:
-            session = conn.execute("SELECT id, title FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            session = conn.execute(
+                "SELECT id, title FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
             if session is None:
                 raise ValueError(f"Session not found: {session_id}")
 
             cur = conn.execute(
                 """
                 INSERT INTO messages (
-                    session_id, role, content, capability, events_json, attachments_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    session_id, role, content, capability, events_json,
+                    attachments_json, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -556,6 +570,7 @@ class SQLiteSessionStore:
                     capability or "",
                     _json_dumps(events or []),
                     _json_dumps(attachments or []),
+                    _json_dumps(metadata or {}),
                     now,
                 ),
             )
@@ -586,6 +601,7 @@ class SQLiteSessionStore:
         capability: str = "",
         events: list[dict[str, Any]] | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> int:
         return await self._run(
             self._add_message_sync,
@@ -595,7 +611,54 @@ class SQLiteSessionStore:
             capability,
             events,
             attachments,
+            metadata,
         )
+
+    def _delete_message_sync(self, message_id: int | str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM messages WHERE id = ?", (int(message_id),))
+            conn.commit()
+        return cur.rowcount > 0
+
+    async def delete_message(self, message_id: int | str) -> bool:
+        return await self._run(self._delete_message_sync, message_id)
+
+    def _get_last_message_sync(
+        self, session_id: str, role: str | None = None
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            if role is None:
+                row = conn.execute(
+                    """
+                    SELECT id, session_id, role, content, capability, events_json,
+                           attachments_json, metadata_json, created_at
+                    FROM messages
+                    WHERE session_id = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (session_id,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT id, session_id, role, content, capability, events_json,
+                           attachments_json, metadata_json, created_at
+                    FROM messages
+                    WHERE session_id = ? AND role = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (session_id, role),
+                ).fetchone()
+        if row is None:
+            return None
+        return self._serialize_message(row)
+
+    async def get_last_message(
+        self, session_id: str, role: str | None = None
+    ) -> dict[str, Any] | None:
+        return await self._run(self._get_last_message_sync, session_id, role)
 
     def _serialize_message(self, row: sqlite3.Row) -> dict[str, Any]:
         return {
@@ -606,6 +669,7 @@ class SQLiteSessionStore:
             "capability": row["capability"] or "",
             "events": _json_loads(row["events_json"], []),
             "attachments": _json_loads(row["attachments_json"], []),
+            "metadata": _json_loads(row["metadata_json"], {}),
             "created_at": row["created_at"],
         }
 
@@ -613,7 +677,8 @@ class SQLiteSessionStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, session_id, role, content, capability, events_json, attachments_json, created_at
+                SELECT id, session_id, role, content, capability, events_json,
+                       attachments_json, metadata_json, created_at
                 FROM messages
                 WHERE session_id = ?
                 ORDER BY id ASC
@@ -638,8 +703,7 @@ class SQLiteSessionStore:
                 (session_id,),
             ).fetchall()
         return [
-            {"id": row["id"], "role": row["role"], "content": row["content"] or ""}
-            for row in rows
+            {"id": row["id"], "role": row["role"], "content": row["content"] or ""} for row in rows
         ]
 
     async def get_messages_for_context(self, session_id: str) -> list[dict[str, Any]]:
@@ -734,7 +798,9 @@ class SQLiteSessionStore:
     async def update_summary(self, session_id: str, summary: str, up_to_msg_id: int) -> bool:
         return await self._run(self._update_summary_sync, session_id, summary, up_to_msg_id)
 
-    def _update_session_preferences_sync(self, session_id: str, preferences: dict[str, Any]) -> bool:
+    def _update_session_preferences_sync(
+        self, session_id: str, preferences: dict[str, Any]
+    ) -> bool:
         with self._connect() as conn:
             current = conn.execute(
                 "SELECT preferences_json FROM sessions WHERE id = ?",
@@ -757,7 +823,9 @@ class SQLiteSessionStore:
             conn.commit()
         return cur.rowcount > 0
 
-    async def update_session_preferences(self, session_id: str, preferences: dict[str, Any]) -> bool:
+    async def update_session_preferences(
+        self, session_id: str, preferences: dict[str, Any]
+    ) -> bool:
         return await self._run(self._update_session_preferences_sync, session_id, preferences)
 
     async def get_session_with_messages(self, session_id: str) -> dict[str, Any] | None:
@@ -770,14 +838,15 @@ class SQLiteSessionStore:
 
     # ── Notebook entries ──────────────────────────────────────────────
 
-    def _upsert_notebook_entries_sync(
-        self, session_id: str, items: list[dict[str, Any]]
-    ) -> int:
+    def _upsert_notebook_entries_sync(self, session_id: str, items: list[dict[str, Any]]) -> int:
         if not items:
             return 0
         now = time.time()
         with self._connect() as conn:
-            if conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone() is None:
+            if (
+                conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+                is None
+            ):
                 raise ValueError(f"Session not found: {session_id}")
             upserted = 0
             for item in items:
@@ -817,9 +886,7 @@ class SQLiteSessionStore:
             conn.commit()
         return upserted
 
-    async def upsert_notebook_entries(
-        self, session_id: str, items: list[dict[str, Any]]
-    ) -> int:
+    async def upsert_notebook_entries(self, session_id: str, items: list[dict[str, Any]]) -> int:
         return await self._run(self._upsert_notebook_entries_sync, session_id, items)
 
     @staticmethod
@@ -897,7 +964,11 @@ class SQLiteSessionStore:
     ) -> dict[str, Any]:
         return await self._run(
             self._list_notebook_entries_sync,
-            category_id, bookmarked, is_correct, limit, offset,
+            category_id,
+            bookmarked,
+            is_correct,
+            limit,
+            offset,
         )
 
     def _get_notebook_entry_sync(self, entry_id: int) -> dict[str, Any] | None:
@@ -949,9 +1020,7 @@ class SQLiteSessionStore:
     async def find_notebook_entry(self, session_id: str, question_id: str) -> dict[str, Any] | None:
         return await self._run(self._find_notebook_entry_sync, session_id, question_id)
 
-    def _update_notebook_entry_sync(
-        self, entry_id: int, updates: dict[str, Any]
-    ) -> bool:
+    def _update_notebook_entry_sync(self, entry_id: int, updates: dict[str, Any]) -> bool:
         allowed = {"bookmarked", "followup_session_id", "user_answer", "is_correct"}
         fields = {k: v for k, v in updates.items() if k in allowed}
         if not fields:
@@ -965,7 +1034,7 @@ class SQLiteSessionStore:
         values = list(fields.values()) + [entry_id]
         with self._connect() as conn:
             cur = conn.execute(
-                f"UPDATE notebook_entries SET {set_clause} WHERE id = ?",
+                f"UPDATE notebook_entries SET {set_clause} WHERE id = ?",  # nosec B608
                 tuple(values),
             )
             conn.commit()
@@ -1011,8 +1080,12 @@ class SQLiteSessionStore:
                 """,
             ).fetchall()
         return [
-            {"id": r["id"], "name": r["name"], "created_at": float(r["created_at"]),
-             "entry_count": int(r["entry_count"])}
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "created_at": float(r["created_at"]),
+                "entry_count": int(r["entry_count"]),
+            }
             for r in rows
         ]
 
@@ -1084,14 +1157,15 @@ class SQLiteSessionStore:
         return await self._run(self._get_entry_categories_sync, entry_id)
 
 
-_instance: SQLiteSessionStore | None = None
+_instances: dict[str, SQLiteSessionStore] = {}
 
 
 def get_sqlite_session_store() -> SQLiteSessionStore:
-    global _instance
-    if _instance is None:
-        _instance = SQLiteSessionStore()
-    return _instance
+    db_path = get_path_service().get_chat_history_db().resolve()
+    key = str(db_path)
+    if key not in _instances:
+        _instances[key] = SQLiteSessionStore(db_path=db_path)
+    return _instances[key]
 
 
 __all__ = ["SQLiteSessionStore", "get_sqlite_session_store"]

@@ -11,18 +11,9 @@ pytest.importorskip("fastapi")
 FastAPI = pytest.importorskip("fastapi").FastAPI
 TestClient = pytest.importorskip("fastapi.testclient").TestClient
 router = importlib.import_module("deeptutor.api.routers.solve").router
-DeepSolveCapability = importlib.import_module("deeptutor.capabilities.deep_solve").DeepSolveCapability
-
-
-class _DummyLogInterceptor:
-    def __init__(self, *_args, **_kwargs) -> None:
-        pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args) -> bool:
-        return False
+DeepSolveCapability = importlib.import_module(
+    "deeptutor.capabilities.deep_solve"
+).DeepSolveCapability
 
 
 def _build_app() -> FastAPI:
@@ -37,7 +28,7 @@ def test_solve_router_uses_explicit_default_tools(monkeypatch, tmp_path) -> None
     class FakeMainSolver:
         def __init__(self, **kwargs) -> None:
             captured["init"] = kwargs
-            self.logger = SimpleNamespace(logger=SimpleNamespace(), display_manager=None)
+            self.display_manager = None
             self.token_tracker = None
 
         async def ainit(self) -> None:
@@ -47,7 +38,6 @@ def test_solve_router_uses_explicit_default_tools(monkeypatch, tmp_path) -> None
             return {"final_answer": "done", "output_dir": str(tmp_path / "solve"), "metadata": {}}
 
     monkeypatch.setattr("deeptutor.api.routers.solve.MainSolver", FakeMainSolver)
-    monkeypatch.setattr("deeptutor.api.routers.solve.LogInterceptor", _DummyLogInterceptor)
     monkeypatch.setattr(
         "deeptutor.api.routers.solve.get_llm_config",
         lambda: SimpleNamespace(api_key="k", base_url="u", api_version="v1"),
@@ -77,7 +67,7 @@ def test_solve_router_respects_disabled_tools(monkeypatch, tmp_path) -> None:
     class FakeMainSolver:
         def __init__(self, **kwargs) -> None:
             captured["init"] = kwargs
-            self.logger = SimpleNamespace(logger=SimpleNamespace(), display_manager=None)
+            self.display_manager = None
             self.token_tracker = None
 
         async def ainit(self) -> None:
@@ -87,7 +77,6 @@ def test_solve_router_respects_disabled_tools(monkeypatch, tmp_path) -> None:
             return {"final_answer": "done", "output_dir": str(tmp_path / "solve"), "metadata": {}}
 
     monkeypatch.setattr("deeptutor.api.routers.solve.MainSolver", FakeMainSolver)
-    monkeypatch.setattr("deeptutor.api.routers.solve.LogInterceptor", _DummyLogInterceptor)
     monkeypatch.setattr(
         "deeptutor.api.routers.solve.get_llm_config",
         lambda: SimpleNamespace(api_key="k", base_url="u", api_version="v1"),

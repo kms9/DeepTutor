@@ -77,13 +77,15 @@ class RAGTool(_PromptHintsMixin, BaseTool):
     async def execute(self, **kwargs: Any) -> ToolResult:
         from deeptutor.tools.rag_tool import rag_search
 
-        query = kwargs.get("query", "")
+        query = str(kwargs.get("query") or "").strip()
+        if not query:
+            raise ValueError("RAG query must be a non-empty string.")
         kb_name = kwargs.get("kb_name")
         event_sink = kwargs.get("event_sink")
         extra_kwargs = {
             key: value
             for key, value in kwargs.items()
-            if key not in {"query", "kb_name", "mode", "event_sink"}
+            if key not in {"query", "kb_name", "event_sink"}
         }
 
         result = await rag_search(
@@ -511,8 +513,8 @@ BUILTIN_TOOL_TYPES: tuple[type[BaseTool], ...] = (
 BUILTIN_TOOL_NAMES: tuple[str, ...] = tuple(tool_type().name for tool_type in BUILTIN_TOOL_TYPES)
 
 TOOL_ALIASES: dict[str, tuple[str, dict[str, Any]]] = {
-    "rag_hybrid": ("rag", {}),
-    "rag_naive": ("rag", {}),
+    "rag_hybrid": ("rag", {"mode": "hybrid"}),
+    "rag_naive": ("rag", {"mode": "naive"}),
     "rag_search": ("rag", {}),
     "code_execute": ("code_execution", {}),
     "run_code": ("code_execution", {}),

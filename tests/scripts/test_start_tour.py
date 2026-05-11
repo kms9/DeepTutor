@@ -18,6 +18,7 @@ def _load_start_tour_module():
         "banner",
         "bold",
         "confirm",
+        "configure_text_streams",
         "countdown",
         "dim",
         "log_error",
@@ -25,6 +26,7 @@ def _load_start_tour_module():
         "log_success",
         "log_warn",
         "select",
+        "spinner",
         "step",
         "text_input",
     ):
@@ -78,6 +80,7 @@ def test_stream_text_kwargs_use_best_effort_decoding() -> None:
 # ---------------------------------------------------------------------------
 # _resolve_python tests (issue #289 — Python 3.14+ compatibility)
 # ---------------------------------------------------------------------------
+
 
 def _get_resolve_python():
     """Import _resolve_python without triggering full module load."""
@@ -140,3 +143,81 @@ class TestResolvePython:
                 assert cmd[0] == python_used, (
                     f"Expected resolved python {python_used!r}, got {cmd[0]!r}"
                 )
+
+    def test_install_commands_support_web_addon_profiles(self) -> None:
+        start_tour = _load_start_tour_module()
+        catalog: dict = {"services": {}}
+
+        tutorbot_cmds = start_tour._install_commands("web-tutorbot", catalog)
+        matrix_cmds = start_tour._install_commands("web-matrix", catalog)
+
+        assert any("requirements/tutorbot.txt" in cmd for cmd, _cwd in tutorbot_cmds)
+        assert any(
+            cmd[0].startswith("npm") or cmd[0].endswith("npm") for cmd, _cwd in tutorbot_cmds
+        )
+        assert any("requirements/matrix.txt" in cmd for cmd, _cwd in matrix_cmds)
+
+    def test_requirements_for_install_can_include_math_animator(self) -> None:
+        start_tour = _load_start_tour_module()
+
+        requirements = start_tour._requirements_for_install(
+            "web-tutorbot",
+            include_math_animator=True,
+        )
+
+        assert requirements == [
+            "requirements/tutorbot.txt",
+            "requirements/math-animator.txt",
+        ]
+
+    def test_node_version_requires_next_compatible_runtime(self) -> None:
+        start_tour = _load_start_tour_module()
+
+        assert start_tour._node_version_supported("v20.9.0")
+        assert start_tour._node_version_supported("v22.1.0")
+        assert not start_tour._node_version_supported("v18.20.0")
+
+
+def test_ensure_env_file_copies_template_when_missing(tmp_path: Path) -> None:
+    start_tour = _load_start_tour_module()
+    env_path = tmp_path / ".env"
+    template_path = tmp_path / ".env.example"
+    template_path.write_text("BACKEND_PORT=8001\n", encoding="utf-8")
+
+    created = start_tour._ensure_env_file(env_path=env_path, template_path=template_path)
+
+    assert created is True
+    assert env_path.read_text(encoding="utf-8") == "BACKEND_PORT=8001\n"
+
+
+def test_save_ui_language_preserves_existing_theme(tmp_path: Path) -> None:
+    start_tour = _load_start_tour_module()
+    settings_path = tmp_path / "interface.json"
+    settings_path.write_text('{"theme":"glass","language":"en"}', encoding="utf-8")
+
+    start_tour._save_ui_language("zh", path=settings_path)
+
+    saved = settings_path.read_text(encoding="utf-8")
+    assert '"theme": "glass"' in saved
+    assert '"language": "zh"' in saved
+
+
+def test_embedding_model_suggestions_include_gemini() -> None:
+    start_tour = _load_start_tour_module()
+    assert start_tour.EMBEDDING_MODEL_SUGGESTIONS["gemini"] == "gemini-embedding-001"
+
+
+def test_embedding_provider_options_include_gemini() -> None:
+    start_tour = _load_start_tour_module()
+    fake_spec = types.SimpleNamespace(
+        label="Gemini",
+        default_api_base="https://generativelanguage.googleapis.com/v1beta/openai/embeddings",
+        is_local=False,
+    )
+    with mock.patch.object(
+        start_tour,
+        "_load_provider_metadata",
+        return_value=({"gemini": fake_spec}, None, None),
+    ):
+        options = start_tour._embedding_provider_options(current=None)
+    assert any(value == "gemini" for value, _label, _desc in options)

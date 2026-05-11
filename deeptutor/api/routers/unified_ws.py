@@ -3,6 +3,22 @@ Unified WebSocket Endpoint
 ==========================
 
 Single ``/api/v1/ws`` endpoint for turn-based execution and replayable streaming.
+
+Supported client message ``type`` values:
+
+- ``message`` / ``start_turn`` — start a new turn from a payload.
+- ``subscribe_turn`` — stream events of an existing turn (with ``after_seq``).
+- ``subscribe_session`` — stream events of the active turn for a session.
+- ``resume_from`` — resume an in-flight turn after reconnection.
+- ``unsubscribe`` — stop a previously created subscription.
+- ``cancel_turn`` — cancel a running turn.
+- ``regenerate`` — re-run the last user message in the given session as a
+  brand-new turn. Replaces the trailing assistant message (if any) and
+  reuses the session's stored capability/tools/preferences. Optional
+  ``overrides`` field accepts ``capability``, ``tools``, ``knowledge_bases``,
+  ``language``, ``config``, ``notebook_references``, ``history_references``.
+  Errors: ``regenerate_busy`` (another turn is running) and
+  ``nothing_to_regenerate`` (no prior user message).
 """
 
 from __future__ import annotations
@@ -20,6 +36,29 @@ logger = logging.getLogger(__name__)
 
 @router.websocket("/ws")
 async def unified_websocket(ws: WebSocket) -> None:
+    # Auth check — mirrors the require_auth HTTP dependency.
+    # Token is read from the ?token= query param (WebSocket headers can't
+    # carry cookies cross-origin in all browsers).
+    # Uses the same local jwt.decode() path — no network call.
+    from deeptutor.multi_user.context import (
+        reset_current_user,
+        set_current_user,
+        user_from_token_payload,
+    )
+    from deeptutor.multi_user.paths import local_admin_user
+    from deeptutor.services.auth import AUTH_ENABLED, decode_token
+
+    user_token = None
+    if AUTH_ENABLED:
+        token = ws.query_params.get("token") or ws.cookies.get("dt_token")
+        payload = decode_token(token) if token else None
+        if not payload:
+            await ws.close(code=4001)
+            return
+        user_token = set_current_user(user_from_token_payload(payload))
+    else:
+        user_token = set_current_user(local_admin_user())
+
     await ws.accept()
     closed = False
     subscription_tasks: dict[str, asyncio.Task[None]] = {}
@@ -146,6 +185,41 @@ async def unified_websocket(ws: WebSocket) -> None:
                     await safe_send({"type": "error", "content": f"Turn not found: {turn_id}"})
                 continue
 
+            if msg_type == "regenerate":
+                session_id = str(msg.get("session_id") or "").strip()
+                if not session_id:
+                    await safe_send({"type": "error", "content": "Missing session_id."})
+                    continue
+                from deeptutor.services.session import get_turn_runtime_manager
+
+                runtime = get_turn_runtime_manager()
+                overrides = msg.get("overrides") if isinstance(msg.get("overrides"), dict) else None
+                try:
+                    _, turn = await runtime.regenerate_last_turn(
+                        session_id,
+                        overrides=overrides,
+                    )
+                except RuntimeError as exc:
+                    await safe_send(
+                        {
+                            "type": "error",
+                            "source": "unified_ws",
+                            "stage": "",
+                            "content": str(exc),
+                            "metadata": {
+                                "turn_terminal": True,
+                                "status": "rejected",
+                                "reason": str(exc),
+                            },
+                            "session_id": session_id,
+                            "turn_id": "",
+                            "seq": 0,
+                        }
+                    )
+                    continue
+                await subscribe_turn(turn["id"], after_seq=0)
+                continue
+
             await safe_send({"type": "error", "content": f"Unknown type: {msg_type}"})
 
     except WebSocketDisconnect:
@@ -157,3 +231,5 @@ async def unified_websocket(ws: WebSocket) -> None:
         closed = True
         for key in list(subscription_tasks.keys()):
             await stop_subscription(key)
+        if user_token is not None:
+            reset_current_user(user_token)

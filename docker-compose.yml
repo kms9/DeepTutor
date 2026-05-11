@@ -11,9 +11,35 @@
 # Prerequisites:
 #   1. Copy .env.example to .env and configure your API keys
 #   2. Runtime settings are stored in ./data/user/settings (created automatically)
+#
+# Local LLM (LM Studio / Ollama / vLLM):
+#   Use "host.docker.internal" instead of "localhost" for LLM_HOST / EMBEDDING_HOST.
+#   See .env.example for details.
 # ============================================
 
 services:
+  # ============================================
+  # PocketBase — optional auth + storage sidecar
+  # Set POCKETBASE_URL=http://pocketbase:8090 in .env to activate.
+  # Leave POCKETBASE_URL blank to run without PocketBase (SQLite fallback).
+  # ============================================
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    container_name: pocketbase
+    restart: unless-stopped
+    ports:
+      - "${POCKETBASE_PORT:-8090}:8090"
+    volumes:
+      - ./data/pocketbase:/pb/pb_data
+    networks:
+      - deeptutor-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8090/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   # ============================================
   # All-in-One DeepTutor Service
   # ============================================
@@ -78,11 +104,15 @@ services:
       - NEXT_PUBLIC_API_BASE_EXTERNAL=${NEXT_PUBLIC_API_BASE_EXTERNAL:-}
       # Alternative: Direct API base URL (same priority as NEXT_PUBLIC_API_BASE_EXTERNAL)
       - NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE:-}
+      # Extra frontend origin(s) allowed by FastAPI CORS when auth is enabled.
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
 
     volumes:
       # Mount local data directory for persistence (read-write)
       # This includes runtime settings under ./data/user/settings.
       - ./data/user:/app/data/user
+      - ./data/memory:/app/data/memory
       - ./data/knowledge_bases:/app/data/knowledge_bases
 
     healthcheck:
@@ -91,6 +121,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+    depends_on:
+      pocketbase:
+        condition: service_healthy
 
     networks:
       - deeptutor-network

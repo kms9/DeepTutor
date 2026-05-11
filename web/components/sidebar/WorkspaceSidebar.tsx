@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { SidebarShell } from "@/components/sidebar/SidebarShell";
+import { LogoutButton } from "@/components/auth/LogoutButton";
+import { AdminLink } from "@/components/auth/AdminLink";
 import { useUnifiedChat } from "@/context/UnifiedChatContext";
 import {
   deleteSession,
@@ -14,10 +16,13 @@ import {
 
 export default function WorkspaceSidebar() {
   const { t } = useTranslation();
-  const pathname = usePathname();
   const router = useRouter();
-  const { newSession, loadSession, selectedSessionId, sessionStatuses, sidebarRefreshToken } =
-    useUnifiedChat();
+  const {
+    newSession,
+    selectedSessionId,
+    sessionStatuses,
+    sidebarRefreshToken,
+  } = useUnifiedChat();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const hasLoadedSessionsRef = useRef(false);
@@ -64,39 +69,47 @@ export default function WorkspaceSidebar() {
 
   const handleNewChat = () => {
     newSession();
-    if (pathname !== "/") router.push("/");
+    router.push("/chat");
   };
 
   const handleSelectSession = useCallback(
     async (sessionId: string) => {
-      await loadSession(sessionId);
-      if (pathname !== "/") router.push("/");
+      router.push(`/chat/${sessionId}`);
     },
-    [loadSession, pathname, router],
+    [router],
   );
 
-  const handleRenameSession = useCallback(async (sessionId: string, title: string) => {
-    const updated = await updateSessionTitle(sessionId, title);
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.session_id === sessionId
-          ? { ...session, title: updated.title, updated_at: updated.updated_at }
-          : session,
-      ),
-    );
-  }, []);
+  const handleRenameSession = useCallback(
+    async (sessionId: string, title: string) => {
+      const updated = await updateSessionTitle(sessionId, title);
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.session_id === sessionId
+            ? {
+                ...session,
+                title: updated.title,
+                updated_at: updated.updated_at,
+              }
+            : session,
+        ),
+      );
+    },
+    [],
+  );
 
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
       if (!window.confirm(t("Delete this chat history?"))) return;
       await deleteSession(sessionId);
-      setSessions((prev) => prev.filter((session) => session.session_id !== sessionId));
+      setSessions((prev) =>
+        prev.filter((session) => session.session_id !== sessionId),
+      );
       if (selectedSessionId === sessionId) {
         newSession();
-        if (pathname !== "/") router.push("/");
+        router.push("/chat");
       }
     },
-    [newSession, pathname, router, selectedSessionId],
+    [newSession, router, selectedSessionId, t],
   );
 
   return (
@@ -109,6 +122,12 @@ export default function WorkspaceSidebar() {
       onSelectSession={handleSelectSession}
       onRenameSession={handleRenameSession}
       onDeleteSession={handleDeleteSession}
+      footerSlot={
+        <>
+          <AdminLink />
+          <LogoutButton />
+        </>
+      }
     />
   );
 }
