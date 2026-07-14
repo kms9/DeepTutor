@@ -3,29 +3,49 @@
 @tailwind utilities;
 
 @layer base {
+  /* ────────────────────────────────────────────────────────────────────────
+     Theme palettes — four families:
+       • Default (.theme-snow) → pure-white neutral greys, blue accent
+       • Cream (:root) and Dark (.dark) → warm family, terracotta accent
+       • Glass (.theme-glass) → translucent purple on near-black
+     Tokens that every theme must publish:
+       --background, --foreground, --card / --popover (+ their -foreground),
+       --primary (+ -foreground), --secondary, --muted (+ -foreground),
+       --accent (+ -foreground), --destructive (+ -foreground),
+       --border, --input, --ring,
+       --overlay   → scrim color for modal backdrops / picker shells
+                     (replaces hardcoded bg-black/40 in components)
+   ──────────────────────────────────────────────────────────────────────── */
+
+  /* Cream — near-white warm canvas. Reads as off-white at first glance;
+     the warm tint only surfaces on filled blocks (selected nav, panels)
+     and against the terracotta primary. Inspired by Claude's chrome:
+     keep bg essentially white, save the visible warmth for accents. */
   :root {
     color-scheme: light;
-    --background: #faf9f6;
-    --foreground: #1f1d1b;
+    --background: #fdfcf9;
+    --foreground: #1c1816;
     --card: #ffffff;
-    --card-foreground: #1f1d1b;
+    --card-foreground: #1c1816;
     --popover: #ffffff;
-    --popover-foreground: #1f1d1b;
+    --popover-foreground: #1c1816;
     --primary: #b0501e;
     --primary-foreground: #ffffff;
-    --secondary: #ece7dd;
-    --secondary-foreground: #1f1d1b;
-    --muted: #ece7dd;
-    --muted-foreground: #6b655f;
-    --accent: #ece7dd;
-    --accent-foreground: #1f1d1b;
+    --secondary: #f5f2ea;
+    --secondary-foreground: #1c1816;
+    --muted: #f1ede2;
+    --muted-foreground: #6d645a;
+    --accent: #ece7d8;
+    --accent-foreground: #1c1816;
     --destructive: #c53a2c;
     --destructive-foreground: #ffffff;
-    --border: #dbd4c8;
-    --input: #dbd4c8;
+    --border: #e6decc;
+    --input: #e6decc;
     --ring: #b0501e;
+    --overlay: rgba(28, 24, 22, 0.42);
   }
 
+  /* Dark — warm near-black, same terracotta family as Cream. */
   .dark {
     color-scheme: dark;
     --background: #1a1918;
@@ -47,54 +67,63 @@
     --border: #3a3634;
     --input: #3a3634;
     --ring: #d4734b;
+    --overlay: rgba(0, 0, 0, 0.6);
   }
 
+  /* Default — pure-white neutral canvas (theme id "snow" kept for stored
+     preferences). No tint anywhere: flat #fff bg, plain grey surfaces and
+     borders. The only chroma is the blue primary on interactive accents,
+     in the spirit of Codex/ChatGPT chrome. */
   .theme-snow {
     color-scheme: light;
-    --background: #f8fafc;
-    --foreground: #0f172a;
+    --background: #ffffff;
+    --foreground: #0d0d0d;
     --card: #ffffff;
-    --card-foreground: #0f172a;
+    --card-foreground: #0d0d0d;
     --popover: #ffffff;
-    --popover-foreground: #0f172a;
-    --primary: #b0501e;
+    --popover-foreground: #0d0d0d;
+    --primary: #2563eb;
     --primary-foreground: #ffffff;
-    --secondary: #e8eef5;
-    --secondary-foreground: #0f172a;
-    --muted: #e8eef5;
-    --muted-foreground: #5a6b82;
-    --accent: #e8eef5;
-    --accent-foreground: #0f172a;
-    --destructive: #c7281f;
+    --secondary: #f7f7f7;
+    --secondary-foreground: #0d0d0d;
+    --muted: #f2f2f2;
+    --muted-foreground: #6e6e6e;
+    --accent: #ececec;
+    --accent-foreground: #0d0d0d;
+    --destructive: #d92d20;
     --destructive-foreground: #ffffff;
-    --border: #cbd5e1;
-    --input: #cbd5e1;
-    --ring: #b0501e;
+    --border: #e5e5e5;
+    --input: #e5e5e5;
+    --ring: #2563eb;
+    --overlay: rgba(0, 0, 0, 0.4);
   }
 
+  /* Glass — translucent purple panels on near-black. Slightly brighter
+     primary so the accent reads against the radial gradient. */
   .theme-glass {
     color-scheme: dark;
-    --background: #111111;
+    --background: #0e0d1a;
     --foreground: #ffffff;
-    --card: rgba(255, 255, 255, 0.05);
+    --card: rgba(255, 255, 255, 0.06);
     --card-foreground: #ffffff;
     --popover: rgba(24, 22, 36, 0.92);
     --popover-foreground: #ffffff;
-    --primary: #9d50bb;
+    --primary: #a855f7;
     --primary-foreground: #ffffff;
-    --secondary: rgba(255, 255, 255, 0.03);
+    --secondary: rgba(255, 255, 255, 0.04);
     --secondary-foreground: #eeeeee;
-    --muted: rgba(255, 255, 255, 0.05);
-    --muted-foreground: #aaaaaa;
-    --accent: rgba(255, 255, 255, 0.1);
+    --muted: rgba(255, 255, 255, 0.06);
+    --muted-foreground: #b5b5c7;
+    --accent: rgba(255, 255, 255, 0.12);
     --accent-foreground: #ffffff;
-    --border: rgba(255, 255, 255, 0.1);
-    --input: rgba(255, 255, 255, 0.05);
-    --ring: #6e48aa;
+    --border: rgba(255, 255, 255, 0.12);
+    --input: rgba(255, 255, 255, 0.06);
+    --ring: #a855f7;
+    --overlay: rgba(0, 0, 0, 0.55);
   }
 
   .theme-glass body {
-    background: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #0f0f1a 100%);
+    background: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #0d0d1a 100%);
     background-attachment: fixed;
   }
 
@@ -202,9 +231,32 @@
   background: var(--muted-foreground);
 }
 
+/* ─── Streaming surfaces ───
+   Every scroll container that wraps an LLM-streaming surface (chat,
+   trace card, quiz follow-up, book chat, …) opts into this contract
+   by carrying ``data-chat-scroll-root="true"``.
+
+   ``overflow-anchor: none``
+     Disables the browser's automatic scroll anchoring. Anchoring tries
+     to keep an in-viewport element fixed in screen space when content
+     above it grows; for a chat surface this fights ``useChatAutoScroll``
+     every time a code block / KaTeX block / dynamic viewer mounts and
+     reflows the message list. Without this rule the page visibly jitters
+     during fast streams.
+
+   ``scroll-behavior: auto``
+     The hook intentionally never animates ``scrollTop``. If a global
+     ``scroll-behavior: smooth`` ever lands (theme, base reset, browser
+     experiment), a smooth animation racing against the next-frame pin
+     reintroduces the exact stutter this rule is here to prevent. */
+[data-chat-scroll-root="true"] {
+  overflow-anchor: none;
+  scroll-behavior: auto;
+}
+
 /* ─── Prose: base ─── */
 .prose {
-  @apply font-serif text-[15px];
+  @apply font-serif text-[16px];
 }
 
 .prose pre {
@@ -536,6 +588,104 @@
   animation: fade-in 0.35s ease-out forwards;
 }
 
+/* Picker chrome: a soft scrim fade + a small spring-in for the card, so
+   modal pickers feel placed rather than popped. */
+@keyframes dt-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-overlay-in {
+  animation: dt-overlay-in 160ms ease-out;
+}
+@keyframes dt-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-pop-in {
+  animation: dt-pop-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Streaming "breathing" label — used above the trace panel to surface that
+   the assistant is still working. Cycles between full and dim opacity with
+   a slow ease, mirroring Claude desktop's reasoning indicator. */
+@keyframes dt-breathing {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.dt-breathing-text {
+  animation: dt-breathing 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Icon-only stretch/contract on top of the opacity breathing. Slightly
+   different period (2.4s vs 1.8s) so the scale and opacity cycles drift
+   in and out of phase, giving the mark a hand-drawn, "alive" feel rather
+   than a single mechanical pulse. */
+@keyframes dt-mark-pulse {
+  0%,
+  100% {
+    transform: scale(0.9);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+.dt-mark-pulse {
+  animation: dt-mark-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+  will-change: transform;
+}
+
+/* While a fullscreen picker/modal is open, freeze ambient background
+   animations (sidebar "running session" pulse, breathing titles, pulsing
+   marks). They live behind the modal's frosted `backdrop-filter`; their
+   per-frame repaints were being re-sampled by the blur, reading as a constant
+   shimmer behind the scrim. `paused` holds them at their current frame (no
+   jump) and they resume on close. */
+body[data-picker-open] .dt-breathing-text,
+body[data-picker-open] .session-pulse,
+body[data-picker-open] .dt-session-icon-running,
+body[data-picker-open] .dt-mark-pulse {
+  animation-play-state: paused !important;
+}
+
+/* Capability menu pop-up — the dropdown blooms out of the chip itself
+   rather than fading in from above the composer. Origin at bottom-left so
+   the menu visually "unfurls" from the chevron corner of the chip. */
+@keyframes dt-popup-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.dt-popup-up {
+  animation: dt-popup-up 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: bottom left;
+  will-change: opacity, transform;
+}
+
 /* Session status pulse */
 @keyframes session-pulse {
   0%,
@@ -553,6 +703,29 @@
   animation: session-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* Session avatar — gentle breathing wiggle when a session is running */
+@keyframes dt-session-icon-running {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  25% {
+    transform: translateY(-0.6px) rotate(-6deg) scale(1.05);
+  }
+  50% {
+    transform: translateY(0) rotate(0deg) scale(1.02);
+  }
+  75% {
+    transform: translateY(0.6px) rotate(6deg) scale(1.05);
+  }
+}
+
+.dt-session-icon-running {
+  animation: dt-session-icon-running 1.6s cubic-bezier(0.45, 0.05, 0.55, 0.95)
+    infinite;
+  transform-origin: center;
+}
+
 /* ----- Chat shell ↔ file preview drawer ---------------------------------
    Squeezes the chat column when the drawer is open. The transition
    timing here MUST match FilePreviewDrawer's transform transition so the
@@ -562,9 +735,23 @@
   transition: padding-right 220ms ease-out;
   padding-right: 0;
 }
+/* While the viewer is being drag-resized, kill the squeeze transition so the
+   chat column tracks the panel edge frame-for-frame instead of lagging. */
+:root[data-viewer-resizing="true"] .chat-preview-shell {
+  transition: none;
+}
 @media (min-width: 1024px) {
+  /* The wider composer-side preview drawer (pre-send attachment peek)
+     gets the largest squeeze. */
   .chat-preview-shell[data-preview-open="true"] {
     padding-right: min(560px, 92vw);
+  }
+  /* Viewer panel (tabbed file/web preview, opened from message attachments
+     or assistant links) is next-widest. Wins over the activity panel when
+     both are open. Width is user-resizable, so the squeeze tracks the
+     ``--viewer-width`` var the panel writes (falls back to 620px). */
+  .chat-preview-shell[data-preview-open="false"][data-viewer-open="true"] {
+    padding-right: min(var(--viewer-width, 620px), 92vw);
   }
 }
 
@@ -600,5 +787,29 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+/* ─── Reduced motion ──────────────────────────────────────────────────────
+   Honor the OS-level prefers-reduced-motion setting. We don't strip motion
+   entirely — interaction-critical transitions (drawer slide, menu reveal)
+   stay visible but are shortened to a near-imperceptible duration so the
+   UI still communicates state changes without vestibular jitter. Loop
+   animations (breathing, pulse, spin) are removed outright. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .dt-breathing-text,
+  .dt-mark-pulse,
+  .session-pulse,
+  .animate-spin {
+    animation: none !important;
   }
 }

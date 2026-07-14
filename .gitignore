@@ -11,9 +11,10 @@ data/
 run_code_workspace/
 deeptutor/agents/question/reference_papers/
 deeptutor/services/rag/eg_only_for_analysis/
-docs/
-.github
+/docs/
+/site/
 .claude
+.agents/
 
 # LaTeX build artifacts
 *.aux
@@ -58,7 +59,6 @@ MANIFEST
 .env
 *.env
 *.env.local
-!.env.example
 env/
 venv/
 ENV/
@@ -78,6 +78,10 @@ node_modules/
 web/.next/
 out/
 web/out/
+.vercel/
+**/.vercel/
+.turbo/
+**/.turbo/
 
 # Auto-generated env.local (created by start_web.py / start_tour.py)
 web/.env.local
@@ -87,6 +91,21 @@ dist/
 web/dist/
 build/
 web/build/
+.open-next/
+**/.open-next/
+.wrangler/
+**/.wrangler/
+.vite/
+**/.vite/
+
+# Yarn / Plug'n'Play
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
 # TypeScript build info
 *.tsbuildinfo
@@ -105,6 +124,7 @@ cache/
 **/cache/
 .cache/
 .ruff_cache
+.playwright-cli/
 
 # Log files
 *.log
@@ -203,6 +223,9 @@ $RECYCLE.BIN/
 *.swp
 *.swo
 
+# Local scripts
+启动 DeepTutor.bat
+
 # ============================================
 # Testing and Coverage
 # ============================================
@@ -210,6 +233,7 @@ $RECYCLE.BIN/
 .coverage.*
 htmlcov/
 .pytest_cache/
+.pytest_tmp/
 .tox/
 nosetests.xml
 coverage.xml
@@ -251,9 +275,6 @@ celerybeat.pid
 
 # Rope project settings
 .ropeproject
-
-# mkdocs documentation
-/site
 
 # ============================================
 # Profiling
