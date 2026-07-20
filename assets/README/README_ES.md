@@ -295,7 +295,7 @@ Todo bajo `data/user/settings/` es JSON/YAML plano. La página **Settings** en e
 | Archivo | Propósito |
 |:---|:---|
 | `model_catalog.json` | Perfiles de proveedores LLM, embeddings y búsqueda; claves API; modelos activos |
-| `system.json` | Puertos de backend/frontend, base de API pública, CORS, verificación SSL, directorio de adjuntos |
+| `system.json` | Puertos de backend/frontend, base de API pública, CORS, verificación SSL, directorio de adjuntos y límites de subida/extracción |
 | `auth.json` | Interruptor de autenticación opcional, nombre de usuario, hash de contraseña, configuración de token/cookie |
 | `integrations.json` | Configuración opcional de PocketBase e integraciones sidecar |
 | `interface.json` | Preferencias de idioma / tema / barra lateral de UI |
@@ -482,7 +482,7 @@ El Memory Graph muestra toda la pirámide — síntesis L3 en el centro, L2 en e
 <img src="../../assets/figs/web-1.4.6+/settings/00-setting%20overview.png" alt="Hub de configuración DeepTutor" width="900">
 </div>
 
-Settings es el panel de control operativo, con una tira de estado en vivo (Backend, LLM, Embedding, Search) y una tarjeta por área: **Apariencia** (tema + idioma de UI), **Red** (base de API, puertos, CORS), **Modelos** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Image Generation, Video Generation), **Knowledge Base** (motor de análisis de documentos), **Chat** (herramientas, servidores MCP, parámetros por capacidad), **Partners & Agents** (los subagentes que puedes consultar desde un turno), y **Memory** (los presupuestos del consolidador).
+Settings es el panel de control operativo, con una tira de estado en vivo (Backend, LLM, Embedding, Search) y una tarjeta por área: **Apariencia** (tema + idioma de UI), **Red** (base de API, puertos, CORS), **Modelos** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Image Generation, Video Generation), **Knowledge Base** (motor de análisis de documentos), **Chat** (herramientas, servidores MCP, parámetros por capacidad, límites de adjuntos), **Partners & Agents** (los subagentes que puedes consultar desde un turno), y **Memory** (los presupuestos del consolidador).
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/settings/01-appearance%20settings.png" alt="Configuración de apariencia de DeepTutor y temas" width="900">

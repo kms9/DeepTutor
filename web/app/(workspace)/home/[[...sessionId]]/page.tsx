@@ -66,12 +66,8 @@ import {
   extractBase64FromDataUrl,
   readFileAsDataUrl,
 } from "@/lib/file-attachments";
-import {
-  classifyFile,
-  isSvgFilename,
-  MAX_ATTACHMENT_BYTES,
-  MAX_TOTAL_ATTACHMENT_BYTES,
-} from "@/lib/doc-attachments";
+import { classifyFile, isSvgFilename } from "@/lib/doc-attachments";
+import { useAttachmentLimits } from "@/lib/attachment-limits";
 import { useChatAutoScroll } from "@/hooks/useChatAutoScroll";
 import { useMeasuredHeight } from "@/hooks/useMeasuredHeight";
 import {
@@ -367,6 +363,7 @@ export default function ChatPage() {
     null,
   );
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const attachmentLimits = useAttachmentLimits();
   const [dragging, setDragging] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [previewSource, setPreviewSource] = useState<FilePreviewSource | null>(
@@ -1181,11 +1178,11 @@ export default function ChatPage() {
           rejected.push({ name: f.name, reason: "unsupported" });
           continue;
         }
-        if (f.size > MAX_ATTACHMENT_BYTES) {
+        if (f.size > attachmentLimits.maxFileBytes) {
           rejected.push({ name: f.name, reason: "too_large" });
           continue;
         }
-        if (runningTotal + f.size > MAX_TOTAL_ATTACHMENT_BYTES) {
+        if (runningTotal + f.size > attachmentLimits.maxTotalBytes) {
           rejected.push({ name: f.name, reason: "quota" });
           break;
         }
@@ -1206,7 +1203,7 @@ export default function ChatPage() {
       }
       return accepted;
     },
-    [attachments, showAttachmentError, t],
+    [attachments, attachmentLimits, showAttachmentError, t],
   );
 
   const handlePaste = useCallback(
@@ -1407,6 +1404,31 @@ export default function ChatPage() {
     [fileToAttachment, filterAndReportFiles],
   );
 
+  // Connected subagents are stored as ``type: subagent`` KBs. Derive the
+  // selected one before the send callback so the callback can depend on the
+  // current selection instead of capturing an undeclared-later value.
+  const agentNameSet = useMemo(
+    () =>
+      new Set(
+        knowledgeBases
+          .filter((kb) => kb.metadata?.type === "subagent")
+          .map((kb) => kb.name),
+      ),
+    [knowledgeBases],
+  );
+  const selectedAgent = useMemo(
+    () => state.knowledgeBases.find((name) => agentNameSet.has(name)) ?? null,
+    [state.knowledgeBases, agentNameSet],
+  );
+  // How many times DeepTutor may consult the selected agent this turn. Seeded
+  // from the configured default; the composer's stepper overrides it per turn.
+  const [subagentBudget, setSubagentBudget] = useState<number | null>(null);
+  useEffect(() => {
+    void getSubagentSettings()
+      .then((settings) => setSubagentBudget(settings.consult_budget))
+      .catch(() => undefined);
+  }, []);
+
   const handleSend = useCallback(
     async (content: string) => {
       if (
@@ -1508,6 +1530,7 @@ export default function ChatPage() {
       quizPdf,
       researchConfig,
       researchValidation,
+      selectedAgent,
       selectedHistorySessions.length,
       selectedAgentSessions.length,
       selectedMemoryFiles.length,
@@ -1517,6 +1540,7 @@ export default function ChatPage() {
       sendMessage,
       shouldAutoScrollRef,
       state.isStreaming,
+      subagentBudget,
       t,
       visualizeConfig,
     ],
@@ -1582,18 +1606,8 @@ export default function ChatPage() {
     [setKBs, state.knowledgeBases],
   );
 
-  // Connected subagents are stored as ``type: subagent`` KBs (so selection
-  // rides the same knowledge_bases path), but in the composer they get their
-  // own single-select Bot chip — distinct from real knowledge bases.
-  const agentNameSet = useMemo(
-    () =>
-      new Set(
-        knowledgeBases
-          .filter((kb) => kb.metadata?.type === "subagent")
-          .map((kb) => kb.name),
-      ),
-    [knowledgeBases],
-  );
+  // Real knowledge bases and connected subagents render as separate composer
+  // controls even though both travel through the knowledge_bases request path.
   const kbOptions = useMemo(
     () => knowledgeBases.filter((kb) => kb.metadata?.type !== "subagent"),
     [knowledgeBases],
@@ -1607,10 +1621,6 @@ export default function ChatPage() {
   );
   const selectedKbOnly = useMemo(
     () => state.knowledgeBases.filter((n) => !agentNameSet.has(n)),
-    [state.knowledgeBases, agentNameSet],
-  );
-  const selectedAgent = useMemo(
-    () => state.knowledgeBases.find((n) => agentNameSet.has(n)) ?? null,
     [state.knowledgeBases, agentNameSet],
   );
   const handleSelectAgent = useCallback(
@@ -1632,15 +1642,6 @@ export default function ChatPage() {
     agentPreselectDoneRef.current = true;
     handleSelectAgent(name);
   }, [agentNameSet, handleSelectAgent]);
-  // How many times DeepTutor may consult the selected agent this turn. Seeded
-  // from the configured default; the composer's stepper overrides it per turn
-  // (sent in the request config, read by the subagent capability).
-  const [subagentBudget, setSubagentBudget] = useState<number | null>(null);
-  useEffect(() => {
-    void getSubagentSettings()
-      .then((s) => setSubagentBudget(s.consult_budget))
-      .catch(() => undefined);
-  }, []);
   const handleSelectNotebookPicker = useCallback(() => {
     setShowNotebookPicker(true);
   }, []);
@@ -1852,12 +1853,16 @@ export default function ChatPage() {
               />
             </div>
           </div>
-          <div className="mx-auto flex w-full max-w-[960px] flex-1 min-h-0 flex-col overflow-hidden px-6">
+          <div className="flex w-full flex-1 min-h-0 flex-col">
             {sessionLoading ? (
-              <SessionLoadingView onCancel={cancelSessionLoad} />
+              <div className="flex w-full flex-1 min-h-0 justify-center px-6">
+                <div className="h-full w-full max-w-[960px]">
+                  <SessionLoadingView onCancel={cancelSessionLoad} />
+                </div>
+              </div>
             ) : !hasMessages ? (
-              <div className="flex flex-1 min-h-0 flex-col items-center justify-end pb-14 animate-fade-in">
-                <div className="flex items-center justify-center gap-4">
+              <div className="flex w-full flex-1 min-h-0 items-end justify-center pb-14 animate-fade-in px-6">
+                <div className="w-full max-w-[960px] flex items-center justify-center gap-4">
                   <img
                     src="/logo_black.png"
                     alt="DeepTutor"
@@ -1877,7 +1882,12 @@ export default function ChatPage() {
                 data-chat-scroll-root="true"
                 onScroll={handleMessagesScroll}
                 onClick={handleMessagesClick}
-                className={`mx-auto w-full flex-1 min-h-0 space-y-9 overflow-y-auto pr-4 [scrollbar-gutter:stable] ${hasMessages ? "pt-6" : "pt-2 pb-6"}`}
+                // `both-edges` reserves the scrollbar gutter on both sides so
+                // the inner mx-auto column centers on the same axis as the
+                // header and composer (siblings outside this scrollport) on
+                // classic-scrollbar platforms; plain `stable` would shift it
+                // ~half a scrollbar-width left of them.
+                className={`w-full flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable_both-edges] ${hasMessages ? "pt-6" : "pt-2 pb-6"}`}
                 style={
                   hasMessages
                     ? (() => {
@@ -1899,22 +1909,24 @@ export default function ChatPage() {
                     : undefined
                 }
               >
-                <ChatMessageList
-                  messages={state.messages}
-                  isStreaming={state.isStreaming}
-                  sessionId={state.sessionId}
-                  language={state.language}
-                  onCopyAssistantMessage={copyAssistantMessage}
-                  onRegenerateMessage={handleRegenerateMessage}
-                  onConfirmOutline={handleConfirmOutline}
-                  onPreviewAttachment={handlePreviewMessageAttachment}
-                  onDeleteTurn={deleteTurn}
-                  selectedBranches={state.selectedBranches}
-                  onEditMessage={editMessage}
-                  onSwitchBranch={switchBranch}
-                  onSubmitUserReply={submitUserReply}
-                />
-                <div ref={messagesEndRef} className="h-px w-full shrink-0" />
+                <div className="mx-auto w-full max-w-[960px] space-y-9 px-6">
+                  <ChatMessageList
+                    messages={state.messages}
+                    isStreaming={state.isStreaming}
+                    sessionId={state.sessionId}
+                    language={state.language}
+                    onCopyAssistantMessage={copyAssistantMessage}
+                    onRegenerateMessage={handleRegenerateMessage}
+                    onConfirmOutline={handleConfirmOutline}
+                    onPreviewAttachment={handlePreviewMessageAttachment}
+                    onDeleteTurn={deleteTurn}
+                    selectedBranches={state.selectedBranches}
+                    onEditMessage={editMessage}
+                    onSwitchBranch={switchBranch}
+                    onSubmitUserReply={submitUserReply}
+                  />
+                  <div ref={messagesEndRef} className="h-px w-full shrink-0" />
+                </div>
               </div>
             )}
 

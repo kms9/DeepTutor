@@ -27,6 +27,12 @@ from deeptutor.services.config import (
     get_runtime_settings_service,
 )
 from deeptutor.services.config.origins import normalize_origins
+from deeptutor.services.config.runtime_settings import (
+    CHAT_ATTACHMENT_CHARS_RANGE,
+    CHAT_ATTACHMENT_MAX_FILE_MB_RANGE,
+    CHAT_ATTACHMENT_MAX_TOTAL_MB_RANGE,
+    compute_ws_max_size,
+)
 from deeptutor.services.embedding.client import reset_embedding_client
 from deeptutor.services.llm.client import reset_llm_client
 from deeptutor.services.llm.config import clear_llm_config_cache
@@ -136,6 +142,28 @@ class NetworkSettingsUpdate(BaseModel):
     frontend_port: int = Field(ge=1, le=65535)
     public_api_base: str = ""
     cors_origins: list[str] = Field(default_factory=list)
+
+
+class ChatAttachmentSettingsUpdate(BaseModel):
+    """Chat attachment policy (size caps + extraction budgets).
+
+    Bounds mirror the normalization clamps in
+    ``runtime_settings.CHAT_ATTACHMENT_*_RANGE`` so the API rejects loudly
+    what the file layer would silently clamp.
+    """
+
+    max_file_mb: int = Field(
+        ge=CHAT_ATTACHMENT_MAX_FILE_MB_RANGE[0], le=CHAT_ATTACHMENT_MAX_FILE_MB_RANGE[1]
+    )
+    max_total_mb: int = Field(
+        ge=CHAT_ATTACHMENT_MAX_TOTAL_MB_RANGE[0], le=CHAT_ATTACHMENT_MAX_TOTAL_MB_RANGE[1]
+    )
+    max_chars_per_doc: int = Field(
+        ge=CHAT_ATTACHMENT_CHARS_RANGE[0], le=CHAT_ATTACHMENT_CHARS_RANGE[1]
+    )
+    max_chars_total: int = Field(
+        ge=CHAT_ATTACHMENT_CHARS_RANGE[0], le=CHAT_ATTACHMENT_CHARS_RANGE[1]
+    )
 
 
 class MinerUSettingsUpdate(BaseModel):
@@ -483,6 +511,61 @@ async def update_network_settings(payload: NetworkSettingsUpdate):
         }
     )
     return _network_settings_payload()
+
+
+def _chat_attachments_payload() -> dict[str, Any]:
+    service = get_runtime_settings_service()
+    stored = service.load_system(include_process_overrides=False)
+    effective = service.load_system(include_process_overrides=True)
+    max_total_bytes = int(effective["chat_attachment_max_total_mb"]) * 1024 * 1024
+    return {
+        "settings": {
+            "max_file_mb": stored["chat_attachment_max_file_mb"],
+            "max_total_mb": stored["chat_attachment_max_total_mb"],
+            "max_chars_per_doc": stored["chat_attachment_max_chars_per_doc"],
+            "max_chars_total": stored["chat_attachment_max_chars_total"],
+        },
+        "effective": {
+            "max_file_bytes": int(effective["chat_attachment_max_file_mb"]) * 1024 * 1024,
+            "max_total_bytes": max_total_bytes,
+            "max_chars_per_doc": effective["chat_attachment_max_chars_per_doc"],
+            "max_chars_total": effective["chat_attachment_max_chars_total"],
+            "ws_max_size": compute_ws_max_size(max_total_bytes),
+        },
+        "bounds": {
+            "max_file_mb": list(CHAT_ATTACHMENT_MAX_FILE_MB_RANGE),
+            "max_total_mb": list(CHAT_ATTACHMENT_MAX_TOTAL_MB_RANGE),
+            "chars": list(CHAT_ATTACHMENT_CHARS_RANGE),
+        },
+        # Size caps and char budgets are re-read on every message, but the WS
+        # frame ceiling is fixed at process start — uploads bigger than the
+        # old ceiling need a backend restart to actually go through.
+        "restart_required_for_larger_uploads": True,
+    }
+
+
+@router.get("/chat-attachments")
+async def get_chat_attachment_settings():
+    """Chat attachment policy. Readable by any user — the composer needs the
+    caps to gate file picks client-side; only the PUT is admin-gated."""
+    return _chat_attachments_payload()
+
+
+@router.put("/chat-attachments")
+async def update_chat_attachment_settings(payload: ChatAttachmentSettingsUpdate):
+    _require_settings_admin()
+    service = get_runtime_settings_service()
+    current = service.load_system(include_process_overrides=False)
+    service.save_system(
+        {
+            **current,
+            "chat_attachment_max_file_mb": payload.max_file_mb,
+            "chat_attachment_max_total_mb": payload.max_total_mb,
+            "chat_attachment_max_chars_per_doc": payload.max_chars_per_doc,
+            "chat_attachment_max_chars_total": payload.max_chars_total,
+        }
+    )
+    return _chat_attachments_payload()
 
 
 def _mineru_settings_payload() -> dict[str, Any]:

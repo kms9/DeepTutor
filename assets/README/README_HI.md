@@ -283,7 +283,7 @@ Subprocess sandbox `data/user/settings/system.json` में `sandbox_allow_sub
 | File | उद्देश्य |
 |:---|:---|
 | `model_catalog.json` | LLM, embedding, और search provider profiles; API keys; active models |
-| `system.json` | Backend/frontend ports, public API base, CORS, SSL verification, attachment directory |
+| `system.json` | Backend/frontend ports, public API base, CORS, SSL verification, attachment directory और upload/extraction limits |
 | `auth.json` | Optional auth toggle, username, password hash, token/cookie settings |
 | `integrations.json` | Optional PocketBase और sidecar integration settings |
 | `interface.json` | UI language / theme / sidebar preferences |
@@ -470,7 +470,7 @@ Memory Graph पूरा pyramid दिखाता है — L3 synthesis cen
 <img src="../../assets/figs/web-1.4.6+/settings/00-setting%20overview.png" alt="DeepTutor settings hub" width="900">
 </div>
 
-Settings operational control plane है, एक live status strip (Backend, LLM, Embedding, Search) और प्रत्येक area के लिए एक card के साथ: **Appearance** (theme + UI language), **Network** (API base, ports, CORS), **Models** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Image Generation, Video Generation), **Knowledge Base** (document parsing engine), **Chat** (tools, MCP servers, per-capability parameters), **Partners & Agents** (वे subagents जिन्हें आप turn से consult कर सकते हैं), और **Memory** (consolidator के budgets)।
+Settings operational control plane है, एक live status strip (Backend, LLM, Embedding, Search) और प्रत्येक area के लिए एक card के साथ: **Appearance** (theme + UI language), **Network** (API base, ports, CORS), **Models** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Image Generation, Video Generation), **Knowledge Base** (document parsing engine), **Chat** (tools, MCP servers, per-capability parameters, attachment caps), **Partners & Agents** (वे subagents जिन्हें आप turn से consult कर सकते हैं), और **Memory** (consolidator के budgets)।
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/settings/01-appearance%20settings.png" alt="DeepTutor appearance settings and themes" width="900">

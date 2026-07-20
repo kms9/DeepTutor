@@ -295,7 +295,7 @@ Tudo sob `data/user/settings/` é JSON/YAML simples. A página **Settings** no n
 | Ficheiro | Propósito |
 |:---|:---|
 | `model_catalog.json` | Perfis de provedores LLM, embeddings e pesquisa; chaves API; modelos ativos |
-| `system.json` | Portas de backend/frontend, base de API pública, CORS, verificação SSL, diretório de anexos |
+| `system.json` | Portas de backend/frontend, base de API pública, CORS, verificação SSL, diretório de anexos e limites de carregamento/extração |
 | `auth.json` | Interruptor de autenticação opcional, nome de utilizador, hash de palavra-passe, configurações de token/cookie |
 | `integrations.json` | Configurações opcionais de PocketBase e integrações sidecar |
 | `interface.json` | Preferências de idioma / tema / barra lateral da UI |
@@ -482,7 +482,7 @@ O Memory Graph mostra toda a pirâmide — síntese L3 no centro, L2 no anel do 
 <img src="../../assets/figs/web-1.4.6+/settings/00-setting%20overview.png" alt="Hub de configurações DeepTutor" width="900">
 </div>
 
-Configurações é o plano de controlo operacional, com uma faixa de estado em tempo real (Backend, LLM, Embedding, Search) e um cartão por área: **Aparência** (tema + idioma da UI), **Rede** (base de API, portas, CORS), **Modelos** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Geração de Imagem, Geração de Vídeo), **Base de Conhecimento** (motor de análise de documentos), **Chat** (ferramentas, servidores MCP, parâmetros por capacidade), **Partners e Agentes** (os subagentes que pode consultar a partir de um turno) e **Memória** (os orçamentos do consolidador).
+Configurações é o plano de controlo operacional, com uma faixa de estado em tempo real (Backend, LLM, Embedding, Search) e um cartão por área: **Aparência** (tema + idioma da UI), **Rede** (base de API, portas, CORS), **Modelos** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Geração de Imagem, Geração de Vídeo), **Base de Conhecimento** (motor de análise de documentos), **Chat** (ferramentas, servidores MCP, parâmetros por capacidade, limites de anexos), **Partners e Agentes** (os subagentes que pode consultar a partir de um turno) e **Memória** (os orçamentos do consolidador).
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/settings/01-appearance%20settings.png" alt="Configurações de aparência e temas DeepTutor" width="900">

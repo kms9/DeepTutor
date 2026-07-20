@@ -728,6 +728,7 @@ def start(home: str | Path | None = None) -> None:
     from deeptutor.services.config import (
         ensure_runtime_settings_files,
         export_runtime_settings_to_env,
+        get_ws_max_size,
         load_auth_settings,
         load_launch_settings,
     )
@@ -843,6 +844,12 @@ def start(home: str | Path | None = None) -> None:
         # 200 polling (/settings, /tools, /knowledge/list, ...) stays out of the
         # logs — matching run_server.py's access_log=False.
         "--no-access-log",
+        # Chat attachments ride the unified WS as base64 in one JSON message;
+        # uvicorn's default 16MB frame cap would sever the socket on uploads
+        # allowed by the configured policy. Derived from system.json — raising
+        # the attachment limits therefore takes a restart to fully apply.
+        "--ws-max-size",
+        str(get_ws_max_size()),
     ]
 
     processes: list[ManagedProcess] = []

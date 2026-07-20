@@ -305,7 +305,7 @@ Tout ce qui se trouve sous `data/user/settings/` est du JSON/YAML brut. La page 
 | Fichier | Objectif |
 |:---|:---|
 | `model_catalog.json` | Profils de fournisseurs LLM, embedding et recherche ; clés API ; modèles actifs |
-| `system.json` | Ports backend/frontend, base d'API publique, CORS, vérification SSL, répertoire des pièces jointes |
+| `system.json` | Ports backend/frontend, base d'API publique, CORS, vérification SSL, répertoire des pièces jointes et limites de téléversement/extraction |
 | `auth.json` | Basculement d'authentification optionnel, nom d'utilisateur, hachage de mot de passe, paramètres de jeton/cookie |
 | `integrations.json` | Paramètres d'intégration PocketBase et sidecar optionnels |
 | `interface.json` | Langue de l'interface / thème / préférences de barre latérale |
@@ -492,7 +492,7 @@ Le Memory Graph montre toute la pyramide — la synthèse L3 au centre, L2 dans 
 <img src="../../assets/figs/web-1.4.6+/settings/00-setting%20overview.png" alt="Hub Settings de DeepTutor" width="900">
 </div>
 
-Settings est le plan de contrôle opérationnel, avec une bande de statut en direct (Backend, LLM, Embedding, Recherche) et une carte par zone : **Apparence** (thème + langue de l'interface), **Réseau** (base d'API, ports, CORS), **Modèles** (LLM, Embedding, Recherche, Texte-à-Parole, Parole-à-Texte, Génération d'Images, Génération de Vidéos), **Base de Connaissances** (moteur d'analyse de documents), **Chat** (outils, serveurs MCP, paramètres par capacité), **Partners & Agents** (les sous-agents que vous pouvez consulter depuis un tour), et **Memory** (les budgets du consolidateur).
+Settings est le plan de contrôle opérationnel, avec une bande de statut en direct (Backend, LLM, Embedding, Recherche) et une carte par zone : **Apparence** (thème + langue de l'interface), **Réseau** (base d'API, ports, CORS), **Modèles** (LLM, Embedding, Recherche, Texte-à-Parole, Parole-à-Texte, Génération d'Images, Génération de Vidéos), **Base de Connaissances** (moteur d'analyse de documents), **Chat** (outils, serveurs MCP, paramètres par capacité, limites des pièces jointes), **Partners & Agents** (les sous-agents que vous pouvez consulter depuis un tour), et **Memory** (les budgets du consolidateur).
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/settings/01-appearance%20settings.png" alt="Paramètres d'apparence et thèmes DeepTutor" width="900">

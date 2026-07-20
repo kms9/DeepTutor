@@ -283,7 +283,7 @@ Wszystko w `data/user/settings/` to zwykły JSON/YAML. Strona **Settings** w prz
 | Plik | Cel |
 |:---|:---|
 | `model_catalog.json` | Profile dostawców LLM, osadzania i wyszukiwania; klucze API; aktywne modele |
-| `system.json` | Porty backendu/frontendu, publiczna baza API, CORS, weryfikacja SSL, katalog załączników |
+| `system.json` | Porty backendu/frontendu, publiczna baza API, CORS, weryfikacja SSL, katalog załączników i limity przesyłania/ekstrakcji |
 | `auth.json` | Opcjonalny przełącznik uwierzytelniania, nazwa użytkownika, hash hasła, ustawienia tokena/cookie |
 | `integrations.json` | Opcjonalne ustawienia PocketBase i integracji sidecar |
 | `interface.json` | Preferencje języka / motywu / paska bocznego interfejsu użytkownika |
@@ -470,7 +470,7 @@ Memory Graph pokazuje całą piramidę — synteza L3 w centrum, L2 w środkowym
 <img src="../../assets/figs/web-1.4.6+/settings/00-setting%20overview.png" alt="Centrum ustawień DeepTutor" width="900">
 </div>
 
-Settings to operacyjna płaszczyzna kontroli z paskiem statusu na żywo (Backend, LLM, Embedding, Search) i jedną kartą na obszar: **Appearance** (motyw + język UI), **Network** (baza API, porty, CORS), **Models** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Image Generation, Video Generation), **Knowledge Base** (silnik parsowania dokumentów), **Chat** (narzędzia, serwery MCP, parametry per-możliwość), **Partners & Agents** (subagenty które możesz konsultować z tury) i **Memory** (budżety konsolidatora).
+Settings to operacyjna płaszczyzna kontroli z paskiem statusu na żywo (Backend, LLM, Embedding, Search) i jedną kartą na obszar: **Appearance** (motyw + język UI), **Network** (baza API, porty, CORS), **Models** (LLM, Embedding, Search, Text-to-Speech, Speech-to-Text, Image Generation, Video Generation), **Knowledge Base** (silnik parsowania dokumentów), **Chat** (narzędzia, serwery MCP, parametry per-możliwość, limity załączników), **Partners & Agents** (subagenty które możesz konsultować z tury) i **Memory** (budżety konsolidatora).
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/settings/01-appearance%20settings.png" alt="Ustawienia wyglądu DeepTutor i motywy" width="900">

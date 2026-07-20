@@ -15,6 +15,7 @@ import {
   Mic,
   Network,
   Palette,
+  Paperclip,
   Plug,
   Search,
   SlidersHorizontal,
@@ -186,6 +187,18 @@ const CHAT_CHILDREN: SettingsLeaf[] = [
     icon: SlidersHorizontal,
     tile: "bg-lime-500/10 text-lime-600 dark:text-lime-400",
   },
+  {
+    key: "attachments",
+    href: "/settings/attachments",
+    label: { zh: "附件", en: "Attachments" },
+    blurb: {
+      zh: "聊天附件的大小上限与文本提取预算。",
+      en: "Upload caps and extraction budgets for chat attachments.",
+    },
+    icon: Paperclip,
+    tile: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+    adminOnly: true,
+  },
 ];
 
 const AGENT_CHILDREN: SettingsLeaf[] = [
@@ -256,8 +269,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     key: "chat",
     label: { zh: "聊天", en: "Chat" },
     blurb: {
-      zh: "工具、MCP 服务器与能力",
-      en: "Tools, MCP servers, and capabilities",
+      zh: "工具、MCP 服务器、能力与附件",
+      en: "Tools, MCP servers, capabilities, and attachments",
     },
     icon: MessagesSquare,
     href: "/settings/chat",
@@ -314,6 +327,7 @@ const STORAGE_PATHS: Record<string, string> = {
   "/settings/video": "data/user/settings/model_catalog.json",
   "/settings/document-parsing": "data/user/settings/document_parsing.json",
   "/settings/tools": "data/user/settings/interface.json",
+  "/settings/attachments": "data/user/settings/system.json",
   "/settings/mcp": "data/user/settings/mcp.json",
   "/settings/capabilities": "data/user/settings/main.yaml · agents.yaml",
   "/settings/memory": "data/user/settings/main.yaml",

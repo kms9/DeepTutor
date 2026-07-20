@@ -155,12 +155,17 @@ def serve(
         )
         raise typer.Exit(code=1)
 
+    from deeptutor.services.config import get_ws_max_size
+
+    # ws_max_size tracks the configured chat-attachment total so base64
+    # uploads fit in one WS frame (uvicorn defaults to 16MB).
     uvicorn.run(
         "deeptutor.api.main:app",
         host=host,
         port=port,
         reload=reload,
         reload_excludes=["web/*", "data/*"] if reload else None,
+        ws_max_size=get_ws_max_size(),
     )
 
 

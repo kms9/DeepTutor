@@ -199,6 +199,37 @@ async def test_network_settings_roundtrip_normalizes_cors_origins(
 
 
 @pytest.mark.asyncio
+async def test_chat_attachment_settings_roundtrip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    service = RuntimeSettingsService(tmp_path / "settings", process_env={})
+    service.save_system({"backend_port": 8001, "frontend_port": 3782})
+    monkeypatch.setattr(settings_router, "get_runtime_settings_service", lambda: service)
+
+    initial = await settings_router.get_chat_attachment_settings()
+    assert initial["settings"]["max_file_mb"] == 20
+    assert initial["effective"]["max_file_bytes"] == 20 * 1024 * 1024
+
+    payload = settings_router.ChatAttachmentSettingsUpdate(
+        max_file_mb=100,
+        max_total_mb=200,
+        max_chars_per_doc=400_000,
+        max_chars_total=300_000,
+    )
+    response = await settings_router.update_chat_attachment_settings(payload)
+
+    assert response["settings"]["max_file_mb"] == 100
+    assert response["settings"]["max_total_mb"] == 200
+    assert response["effective"]["max_total_bytes"] == 200 * 1024 * 1024
+    # WS frame ceiling covers the base64-inflated total.
+    assert response["effective"]["ws_max_size"] > (200 * 1024 * 1024 * 4) // 3
+    # Other system.json keys survive the partial update.
+    stored = service.load_system(include_process_overrides=False)
+    assert stored["backend_port"] == 8001
+    assert stored["chat_attachment_max_chars_per_doc"] == 400_000
+
+
+@pytest.mark.asyncio
 async def test_mineru_settings_roundtrip_redacts_token(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:

@@ -283,7 +283,7 @@ deeptutor config show
 | ファイル | 目的 |
 |:---|:---|
 | `model_catalog.json` | LLM、埋め込み、検索プロバイダープロフィール；APIキー；アクティブモデル |
-| `system.json` | バックエンド/フロントエンドポート、公開APIベース、CORS、SSL検証、添付ファイルディレクトリ |
+| `system.json` | バックエンド/フロントエンドポート、公開APIベース、CORS、SSL検証、添付ファイルディレクトリ、アップロード/抽出の上限 |
 | `auth.json` | オプション認証トグル、ユーザー名、パスワードハッシュ、トークン/クッキー設定 |
 | `integrations.json` | オプションのPocketBaseとサイドカー統合設定 |
 | `interface.json` | UIの言語/テーマ/サイドバー設定 |
@@ -470,7 +470,7 @@ Memory Graphはピラミッド全体を表示します — L3合成が中心、L
 <img src="../../assets/figs/web-1.4.6+/settings/00-setting%20overview.png" alt="DeepTutor Settingsハブ" width="900">
 </div>
 
-Settingsはオペレーションコントロールプレーンで、ライブステータスストリップ（バックエンド、LLM、埋め込み、検索）とエリアごとのカードがあります：**外観**（テーマ + UI言語）、**ネットワーク**（APIベース、ポート、CORS）、**モデル**（LLM、埋め込み、検索、TTS、STT、画像生成、動画生成）、**Knowledge Base**（ドキュメント解析エンジン）、**Chat**（ツール、MCPサーバー、機能パラメーター）、**Partners & Agents**（ターンから相談できるサブエージェント）、**Memory**（コンソリデーターのバジェット）。
+Settingsはオペレーションコントロールプレーンで、ライブステータスストリップ（バックエンド、LLM、埋め込み、検索）とエリアごとのカードがあります：**外観**（テーマ + UI言語）、**ネットワーク**（APIベース、ポート、CORS）、**モデル**（LLM、埋め込み、検索、TTS、STT、画像生成、動画生成）、**Knowledge Base**（ドキュメント解析エンジン）、**Chat**（ツール、MCPサーバー、機能パラメーター、添付ファイル上限）、**Partners & Agents**（ターンから相談できるサブエージェント）、**Memory**（コンソリデーターのバジェット）。
 
 <div align="center">
 <img src="../../assets/figs/web-1.4.6+/settings/01-appearance%20settings.png" alt="DeepTutor外観設定とテーマ" width="900">

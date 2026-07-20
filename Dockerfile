@@ -270,7 +270,12 @@ echo "[Backend]  🚀 Starting FastAPI backend on ${BACKEND_HOST}:${BACKEND_PORT
 # BACKEND_HOST defaults to 0.0.0.0 (LAN-reachable, matches bridge-mode
 # port publishing). Set BACKEND_HOST=127.0.0.1 when running with
 # network_mode: host to keep the backend on loopback only.
-exec python -m uvicorn deeptutor.api.main:app --host ${BACKEND_HOST} --port ${BACKEND_PORT} --no-access-log
+#
+# --ws-max-size: chat attachments travel base64 inside one WS message; derive
+# the frame cap from the configured attachment policy (system.json) so uploads
+# the policy allows are not severed by uvicorn's 16MB default.
+WS_MAX_SIZE=$(python -c "from deeptutor.services.config import get_ws_max_size; print(get_ws_max_size())" 2>/dev/null || echo 16777216)
+exec python -m uvicorn deeptutor.api.main:app --host ${BACKEND_HOST} --port ${BACKEND_PORT} --no-access-log --ws-max-size ${WS_MAX_SIZE}
 EOF
 
 RUN sed -i 's/\r$//' /app/start-backend.sh && chmod +x /app/start-backend.sh
@@ -453,7 +458,7 @@ RUN pip install --no-cache-dir \
 # the production stage is reused as-is.
 RUN cat > /etc/supervisor/conf.d/programs.conf <<'EOF'
 [program:backend]
-command=python -m uvicorn deeptutor.api.main:app --host 0.0.0.0 --port %(ENV_BACKEND_PORT)s --reload --no-access-log
+command=/bin/bash -c "exec python -m uvicorn deeptutor.api.main:app --host 0.0.0.0 --port ${BACKEND_PORT:-8001} --reload --no-access-log --ws-max-size $(python -c 'from deeptutor.services.config import get_ws_max_size; print(get_ws_max_size())' 2>/dev/null || echo 16777216)"
 directory=/app
 user=deeptutor
 autostart=true
