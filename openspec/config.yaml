@@ -1,0 +1,34 @@
+schema: spec-driven
+
+context: |
+  项目：deeptutor-go —— 用 Go 重写 DeepTutor（本仓库的 Python 后端）除 RAG 等 Python 生态绑定域外的全部后端；
+  RAG/文档解析/Manim/Python 沙箱保留为 deeptutor-sidecar（Python, FastAPI）。
+  硬约束：现有 web/ 前端（Next.js 16）零改动复用（REST/WS 协议逐字段对等）；沿用基线 SQLite schema 与 data/ 目录布局（老数据免迁移）；
+  单机 local-first，禁止引入 PostgreSQL/消息队列。
+
+  技术选型（必须遵循）：
+  - Go >= 1.23 单 module；HTTP/REST 用 gin-gonic/gin；WebSocket 用 gorilla/websocket（gin handler 内 upgrade）
+  - LLM/Agent 框架用 cloudwego/eino + eino-ext（provider 适配实现为 eino ChatModel；Agent Loop 用 eino tool-calling 循环/graph；流式经 StreamReader 映射到 StreamEvent）
+  - SQLite 用 modernc.org/sqlite + database/sql；配置用 spf13/viper 读 data/user/settings/*.json；CLI 用 spf13/cobra
+
+  权威参考文档（写 artifact 前必读对应部分）：
+  - 模块行为规格（需求事实源）：docs/golang-req/openspec/specs/<module>/spec.md
+  - 模块划分/依赖/里程碑：docs/golang-req/openspec/ROADMAP.md
+  - 项目上下文与约定：docs/golang-req/openspec/project.md
+  - 验收标准与有意差异登记（D-001~D-008）：docs/golang-req/acceptance.md
+  - Python 基线代码（只读）：deeptutor/、deeptutor_cli/
+
+  语言约定：文档正文中文；代码标识、协议字段、命令、专有名词保留英文。
+
+rules:
+  proposal:
+    - Why 部分须引用 docs/golang-req/openspec/specs/ 下对应模块 spec 与 ROADMAP 中的 Wave/里程碑定位
+    - Impact 部分须列出依赖的其他 change（按 ROADMAP 依赖图）
+  specs:
+    - ADDED Requirements 内容以 docs/golang-req/openspec/specs/<module>/spec.md 的 Requirements 为事实源，不得凭空增删语义
+    - Scenario 必须用 4 个 # 且每个 Requirement 至少 1 个 Scenario
+  design:
+    - 必须给出 eino/gin/sqlite/viper 的具体落位（包结构、关键接口签名级别），并说明与基线 Python 实现的映射
+    - 与基线的有意差异必须引用 acceptance.md 的差异 ID（D-001~D-008）
+  tasks:
+    - 任务按依赖排序、可单会话完成、可验证；最后一组任务必须包含「spec Scenario 落测试 + 协议对等验收」
